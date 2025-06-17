@@ -28,7 +28,9 @@
       "Bash(git push:*)",
       "Bash(gh repo create:*)",
       "Bash(git remote remove:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }
