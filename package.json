@@ -11,7 +11,8 @@
     "start": "ts-node src/cli.ts",
     "test:run": "ts-node src/cli.ts run",
     "start:tsx": "tsx src/cli.ts",
-    "test:run:tsx": "tsx src/cli.ts run"
+    "test:run:tsx": "tsx src/cli.ts run",
+    "prepublishOnly": "npm run lint"
   },
   "keywords": [
     "n8n",
@@ -23,8 +24,25 @@
     "tdd",
     "test-framework"
   ],
-  "author": "",
+  "author": "pvdyck",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pvdyck/n8n-test-framework.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pvdyck/n8n-test-framework/issues"
+  },
+  "homepage": "https://github.com/pvdyck/n8n-test-framework#readme",
+  "files": [
+    "src/",
+    "bin/",
+    "n8n-test",
+    "package.json",
+    "README.md",
+    "LICENSE",
+    "tsconfig.json"
+  ],
   "dependencies": {
     "@types/js-yaml": "^4.0.9",
     "axios": "^1.6.0",

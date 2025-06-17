@@ -1,0 +1,50 @@
+# Development files
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation (keep README.md)
+docs/
+CLAUDE.md
+ZERO_KNOWLEDGE_TESTING.md
+ARCHITECTURE.md
+
+# Examples and tests
+examples/
+test-results/
+coverage/
+*.lcov
+.nyc_output/
+
+# Build and logs
+*.log
+tmp/
+temp/
+.tmp/
+.n8n-test-temp/
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ESLint
+.eslintrc.json
+
+# Keep only production dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+yarn.lock
+pnpm-lock.yaml

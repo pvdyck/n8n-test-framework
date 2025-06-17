@@ -22,7 +22,13 @@
       "Bash(npm run start:*)",
       "Bash(npm run lint:*)",
       "Bash(git branch:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(gh repo create:*)",
+      "Bash(git remote remove:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }
