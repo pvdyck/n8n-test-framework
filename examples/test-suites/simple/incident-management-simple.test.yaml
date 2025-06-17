@@ -1,0 +1,18 @@
+test: Incident Management
+workflow: ../../workflows/incident-management.json
+cases:
+  - name: P1 Critical incident
+    trigger:
+      webhook:
+        service: api-service
+        severity: critical
+        description: API is down
+        affectedSystems:
+          - payments
+          - orders
+  - name: P3 Medium severity
+    trigger:
+      webhook:
+        service: monitoring
+        severity: medium
+        description: High memory usage

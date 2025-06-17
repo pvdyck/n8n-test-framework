@@ -1,0 +1,87 @@
+{
+  "name": "User Registration",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "start-node"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate email format\nconst email = $input.item.json.email;\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n\nif (!emailRegex.test(email)) {\n  throw new Error('Invalid email format');\n}\n\nreturn $input.all();"
+      },
+      "name": "Validate Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "id": "validate-email"
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/users",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "email",
+              "value": "={{$json[\"email\"]}}"
+            },
+            {
+              "name": "name",
+              "value": "={{$json[\"name\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Create User API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300],
+      "id": "create-user-api"
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@example.com",
+        "toEmail": "={{$json[\"email\"]}}",
+        "subject": "Welcome to our platform!",
+        "text": "Hi {{$json[\"name\"]}},\\n\\nWelcome to our platform! Your account has been created successfully.",
+        "options": {}
+      },
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "id": "send-email"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format final response\nreturn [{\n  json: {\n    userId: $input.item.json.id,\n    email: $input.item.json.email,\n    name: $input.item.json.name,\n    emailSent: true,\n    onboardingStatus: 'completed',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "id": "format-response"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{"node": "Validate Email", "type": "main", "index": 0}]]
+    },
+    "Validate Email": {
+      "main": [[{"node": "Create User API", "type": "main", "index": 0}]]
+    },
+    "Create User API": {
+      "main": [[{"node": "Send Welcome Email", "type": "main", "index": 0}]]
+    },
+    "Send Welcome Email": {
+      "main": [[{"node": "Format Response", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

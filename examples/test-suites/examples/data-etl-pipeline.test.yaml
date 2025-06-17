@@ -1,0 +1,6 @@
+test: Data ETL Pipeline Tests
+workflow: ../../workflows/data-etl-pipeline.json
+cases:
+  - name: Generate daily sales report with normal data
+  - name: Handle empty data gracefully
+  - name: Trigger inventory alerts for low stock

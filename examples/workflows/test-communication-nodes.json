@@ -1,0 +1,102 @@
+{
+  "name": "Test Communication Nodes",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "toEmail": "{{ $json.recipient }}",
+        "subject": "{{ $json.subject }}",
+        "text": "{{ $json.message }}"
+      },
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "channel": "#notifications",
+        "text": "{{ $json.message }}",
+        "attachments": []
+      },
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "channelId": "123456789",
+        "message": "{{ $json.message }}"
+      },
+      "name": "Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "@username",
+        "text": "{{ $json.message }}"
+      },
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "operation": "sendText",
+        "to": "{{ $json.phone }}",
+        "text": "{{ $json.message }}"
+      },
+      "name": "Twilio",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: {\n  email: items[0].json,\n  slack: items[1].json,\n  discord: items[2].json,\n  telegram: items[3].json,\n  twilio: items[4].json\n}}];"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "Send Email", "type": "main", "index": 0 },
+          { "node": "Slack", "type": "main", "index": 0 },
+          { "node": "Discord", "type": "main", "index": 0 },
+          { "node": "Telegram", "type": "main", "index": 0 },
+          { "node": "Twilio", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 0 }]]
+    },
+    "Slack": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 1 }]]
+    },
+    "Discord": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 2 }]]
+    },
+    "Telegram": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 3 }]]
+    },
+    "Twilio": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 4 }]]
+    }
+  }
+}

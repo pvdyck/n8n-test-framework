@@ -1,0 +1,28 @@
+{
+  "name": "Data Processing",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// This is a simplified example workflow\n// In a real workflow, you would have actual data processing nodes\n\nconst input = $input.item.json;\n\n// Handle different test cases\nif (input.csvData) {\n  // CSV parsing simulation\n  const lines = input.csvData.split('\\\\n');\n  const headers = lines[0].split(',');\n  const results = [];\n  \n  for (let i = 1; i < lines.length; i++) {\n    const values = lines[i].split(',');\n    const obj = {};\n    headers.forEach((header, index) => {\n      obj[header] = isNaN(values[index]) ? values[index] : parseInt(values[index]);\n    });\n    obj.processed = true;\n    results.push(obj);\n  }\n  return results.map(r => ({json: r}));\n}\n\nif (input.records && input.minAge !== undefined) {\n  // Age filtering\n  return input.records\n    .filter(r => r.age >= input.minAge)\n    .map(r => ({json: {...r, eligible: true}}));\n}\n\nif (input.transactions) {\n  // Aggregation\n  const totals = {};\n  let sum = 0;\n  \n  input.transactions.forEach(t => {\n    totals[t.category] = (totals[t.category] || 0) + t.amount;\n    sum += t.amount;\n  });\n  \n  return [{\n    json: {\n      totals,\n      count: input.transactions.length,\n      average: sum / input.transactions.length\n    }\n  }];\n}\n\nif (input.data && Array.isArray(input.data)) {\n  // Empty data handling\n  return [{\n    json: {\n      processed: input.data.length,\n      errors: [],\n      status: 'success'\n    }\n  }];\n}\n\nif (input.record) {\n  // Validation\n  const errors = [];\n  if (!input.record.email) errors.push('Missing required field: email');\n  \n  return [{\n    json: {\n      valid: errors.length === 0,\n      errors\n    }\n  }];\n}\n\nreturn $input.all();"
+      },
+      "name": "Process Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{"node": "Process Data", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

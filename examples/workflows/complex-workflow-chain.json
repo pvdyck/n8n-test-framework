@@ -1,0 +1,295 @@
+{
+  "name": "Complex Multi-Level Workflow Chain",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "name": "Batch Processing Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "data-extractor"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "batchSize": 1000,
+            "lastProcessedId": "={{ $workflow.settings.lastProcessedId || 0 }}",
+            "dataSource": "primary_db"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Extract Data",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 100,
+        "options": {}
+      },
+      "name": "Split Into Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "data-transformer"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "records": "={{ JSON.stringify($items()) }}",
+            "transformationType": "enrichment",
+            "batchId": "={{ $runIndex }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Transform Batch",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "data-validator"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "transformedData": "={{ JSON.stringify($json.transformedRecords) }}",
+            "validationRules": "strict",
+            "batchId": "={{ $json.batchId }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Validate Data",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.validRecords.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Has Valid Data?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "ml-analyzer"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "validatedData": "={{ JSON.stringify($json.validRecords) }}",
+            "analysisType": "anomaly_detection",
+            "modelVersion": "v2.1"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "ML Analysis",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "data-enricher"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "analyzedData": "={{ JSON.stringify($json.analysisResults) }}",
+            "enrichmentSources": "external_apis",
+            "priorityLevel": "high"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Enrich Data",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "data-loader"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "enrichedData": "={{ JSON.stringify($json.enrichedRecords) }}",
+            "targetSystem": "data_warehouse",
+            "loadStrategy": "upsert"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Load to DW",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "index-builder"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "loadedData": "={{ JSON.stringify($json.loadedRecords) }}",
+            "indexType": "elasticsearch",
+            "refreshStrategy": "immediate"
+          }
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "name": "Build Search Index",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "error-handler"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "invalidRecords": "={{ JSON.stringify($json.invalidRecords) }}",
+            "errorType": "validation_failed",
+            "batchId": "={{ $json.batchId }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Handle Errors",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate results from all batches\nconst allResults = [];\nconst errors = [];\nconst totalProcessed = items.length;\n\nfor (const item of items) {\n  if (item.json.success) {\n    allResults.push(...item.json.loadedRecords);\n  } else {\n    errors.push(item.json.error);\n  }\n}\n\nconst summary = {\n  totalBatches: totalProcessed,\n  totalRecords: allResults.length,\n  successfulBatches: totalProcessed - errors.length,\n  failedBatches: errors.length,\n  successRate: ((totalProcessed - errors.length) / totalProcessed * 100).toFixed(2) + '%',\n  workflowChainDepth: 8, // data-extractor -> transformer -> validator -> ml-analyzer -> enricher -> loader -> index-builder -> (error-handler)\n  totalSubWorkflowsExecuted: totalProcessed * 7, // Each batch goes through 7 workflows (except async index builder)\n  processingStarted: $node['Batch Processing Trigger'].json.triggered_at,\n  processingCompleted: new Date().toISOString()\n};\n\nreturn [{ json: { summary, allResults, errors } }];"
+      },
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "report-generator"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "summary": "={{ JSON.stringify($json.summary) }}",
+            "reportType": "batch_processing",
+            "distribution": "email,slack,dashboard"
+          }
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [2450, 300]
+    }
+  ],
+  "connections": {
+    "Batch Processing Trigger": {
+      "main": [[{ "node": "Extract Data", "type": "main", "index": 0 }]]
+    },
+    "Extract Data": {
+      "main": [[{ "node": "Split Into Batches", "type": "main", "index": 0 }]]
+    },
+    "Split Into Batches": {
+      "main": [[{ "node": "Transform Batch", "type": "main", "index": 0 }]]
+    },
+    "Transform Batch": {
+      "main": [[{ "node": "Validate Data", "type": "main", "index": 0 }]]
+    },
+    "Validate Data": {
+      "main": [[{ "node": "Has Valid Data?", "type": "main", "index": 0 }]]
+    },
+    "Has Valid Data?": {
+      "main": [
+        [{ "node": "ML Analysis", "type": "main", "index": 0 }],
+        [{ "node": "Handle Errors", "type": "main", "index": 0 }]
+      ]
+    },
+    "ML Analysis": {
+      "main": [[{ "node": "Enrich Data", "type": "main", "index": 0 }]]
+    },
+    "Enrich Data": {
+      "main": [[{ "node": "Load to DW", "type": "main", "index": 0 }]]
+    },
+    "Load to DW": {
+      "main": [
+        [
+          { "node": "Build Search Index", "type": "main", "index": 0 },
+          { "node": "Aggregate Results", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Handle Errors": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Results": {
+      "main": [[{ "node": "Generate Report", "type": "main", "index": 0 }]]
+    }
+  }
+}

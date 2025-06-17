@@ -1,0 +1,167 @@
+{
+  "name": "External Integrations Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 500],
+      "id": "start"
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/users/{{$json[\"username\"]}}",
+        "options": {
+          "headers": {
+            "header": [
+              {
+                "name": "User-Agent",
+                "value": "n8n-test"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Fetch GitHub User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300],
+      "id": "fetch-github"
+    },
+    {
+      "parameters": {
+        "operation": "find",
+        "collection": "users",
+        "query": "={\"email\": \"{{$json[\"email\"]}}\"}",
+        "options": {}
+      },
+      "name": "Query MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "id": "query-mongo"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM customers WHERE created_at > '{{$json[\"startDate\"]}}'",
+        "options": {}
+      },
+      "name": "Query PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [450, 700],
+      "id": "query-postgres"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Combine data from multiple sources\nconst github = $item(0)?.json || {};\nconst mongo = $item(1)?.json || {};\nconst postgres = $item(2)?.json || {};\n\nreturn [{\n  json: {\n    github: {\n      login: github.login,\n      name: github.name,\n      public_repos: github.public_repos\n    },\n    database: {\n      mongoRecords: mongo.length || 0,\n      postgresRecords: postgres.length || 0\n    },\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 500],
+      "id": "combine-results"
+    },
+    {
+      "parameters": {
+        "channel": "#notifications",
+        "text": "New user data processed:\n- GitHub: {{$json[\"github\"][\"name\"]}}\n- Repos: {{$json[\"github\"][\"public_repos\"]}}\n- DB Records: {{$json[\"database\"][\"mongoRecords\"]}}",
+        "options": {
+          "attachments": [
+            {
+              "color": "#36a64f",
+              "title": "Processing Complete",
+              "text": "All external data fetched successfully"
+            }
+          ]
+        }
+      },
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "id": "send-slack"
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@example.com",
+        "toEmail": "{{$json[\"email\"]}}",
+        "subject": "Data Processing Report",
+        "text": "Your data has been processed.\n\nGitHub Profile: {{$json[\"github\"][\"name\"]}}\nPublic Repos: {{$json[\"github\"][\"public_repos\"]}}\n\nDatabase Records Found:\n- MongoDB: {{$json[\"database\"][\"mongoRecords\"]}}\n- PostgreSQL: {{$json[\"database\"][\"postgresRecords\"]}}",
+        "options": {}
+      },
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 500],
+      "id": "send-email"
+    },
+    {
+      "parameters": {
+        "bucketName": "n8n-test-bucket",
+        "fileName": "reports/{{$json[\"github\"][\"login\"]}}-{{$now}}.json",
+        "binaryPropertyName": "data",
+        "options": {
+          "acl": "private"
+        }
+      },
+      "name": "Upload to S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [850, 700],
+      "id": "upload-s3"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Final summary\nreturn [{\n  json: {\n    success: true,\n    notifications: {\n      slack: true,\n      email: true,\n      s3Upload: true\n    },\n    processedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Final Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 500],
+      "id": "final-summary"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {"node": "Fetch GitHub User", "type": "main", "index": 0},
+          {"node": "Query MongoDB", "type": "main", "index": 0},
+          {"node": "Query PostgreSQL", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Fetch GitHub User": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Query MongoDB": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Query PostgreSQL": {
+      "main": [[{"node": "Combine Results", "type": "main", "index": 0}]]
+    },
+    "Combine Results": {
+      "main": [
+        [
+          {"node": "Send to Slack", "type": "main", "index": 0},
+          {"node": "Send Email", "type": "main", "index": 0},
+          {"node": "Upload to S3", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Send to Slack": {
+      "main": [[{"node": "Final Summary", "type": "main", "index": 0}]]
+    },
+    "Send Email": {
+      "main": [[{"node": "Final Summary", "type": "main", "index": 0}]]
+    },
+    "Upload to S3": {
+      "main": [[{"node": "Final Summary", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

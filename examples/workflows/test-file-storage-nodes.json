@@ -1,0 +1,102 @@
+{
+  "name": "Test File Storage Nodes",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "test-bucket",
+        "fileName": "{{ $json.filename }}"
+      },
+      "name": "AWS S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "{{ $json.filename }}",
+        "parents": ["root"]
+      },
+      "name": "Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "path": "/uploads/{{ $json.filename }}"
+      },
+      "name": "FTP",
+      "type": "n8n-nodes-base.ftp",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/tmp/{{ $json.filename }}",
+        "dataPropertyName": "content"
+      },
+      "name": "Write File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "path": "/{{ $json.filename }}"
+      },
+      "name": "Dropbox",
+      "type": "n8n-nodes-base.dropbox",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: {\n  s3: items[0].json,\n  googleDrive: items[1].json,\n  ftp: items[2].json,\n  localFile: items[3].json,\n  dropbox: items[4].json\n}}];"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "AWS S3", "type": "main", "index": 0 },
+          { "node": "Google Drive", "type": "main", "index": 0 },
+          { "node": "FTP", "type": "main", "index": 0 },
+          { "node": "Write File", "type": "main", "index": 0 },
+          { "node": "Dropbox", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "AWS S3": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 0 }]]
+    },
+    "Google Drive": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 1 }]]
+    },
+    "FTP": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 2 }]]
+    },
+    "Write File": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 3 }]]
+    },
+    "Dropbox": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 4 }]]
+    }
+  }
+}

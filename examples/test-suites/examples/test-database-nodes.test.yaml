@@ -1,0 +1,27 @@
+test: Database Node Types Test
+workflow: ../../workflows/test-database-nodes.json
+cases:
+  - name: Test all database node types
+    input:
+      email: db-test@example.com
+      name: Database Test User
+    expect:
+      postgres:
+        id: 1
+        email: db-test@example.com
+        name: Database Test User
+        created_at: '2024-01-01T00:00:00.000Z'
+      mysql:
+        insertId: 1
+        affectedRows: 1
+      mongodb:
+        _id: '507f1f77bcf86cd799439011'
+        email: db-test@example.com
+        name: Database Test User
+      redis:
+        success: true
+        key: 'user:db-test@example.com'
+      elasticsearch:
+        _index: users
+        _id: '123456'
+        result: created

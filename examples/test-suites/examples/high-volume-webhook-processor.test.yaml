@@ -1,0 +1,235 @@
+test: High-Volume Webhook Processor with Rate Limiting
+workflow: ../../workflows/high-volume-webhook-processor.json
+cases:
+  - name: Process valid user creation event within rate limits
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-123
+        body:
+          event_type: user.created
+          event_id: evt-001
+          timestamp: '2024-01-15T10:00:00.000Z'
+          data:
+            user_id: usr-789
+            email: newuser@example.com
+            name: John Doe
+    expect:
+      status: accepted
+      eventId: evt-001
+      message: Event user.created queued for processing
+      metadata:
+        processingTime: '*'
+        rateLimits:
+          requestsPerMinute: 1
+          remainingPerMinute: 299
+    mocks:
+      - nodeType: n8n-nodes-base.kafka
+        response:
+          partition: 0
+          offset: 12345
+      - nodeType: n8n-nodes-base.rabbitmq
+        nodeName: User Event Queue
+        response:
+          success: true
+          messageId: msg-123
+      - workflowId: user-processor
+        response:
+          processed: true
+
+  - name: Rate limit exceeded - too many requests per second
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-spam
+        body:
+          event_type: order.placed
+          event_id: evt-spam-11
+          timestamp: '2024-01-15T10:00:00.000Z'
+          data:
+            order_id: ord-999
+    expect:
+      status: 429
+      error: 'Rate limit exceeded: Too many requests per second'
+      
+  - name: Invalid payload - missing required fields
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-456
+        body:
+          event_type: order.placed
+          # Missing event_id and timestamp
+          data:
+            order_id: ord-123
+    expect:
+      status: 400
+      error: Bad Request
+      message: 'Missing required field: event_id, Missing required field: timestamp'
+    mocks:
+      - nodeType: n8n-nodes-base.elasticsearch
+        response:
+          _index: webhook-errors
+          _id: error-123
+          result: created
+
+  - name: High-priority payment event processing
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-789
+        body:
+          event_type: payment.completed
+          event_id: pay-001
+          timestamp: '2024-01-15T10:00:00.000Z'
+          data:
+            payment_id: pmt-456
+            amount: 2500.00
+            currency: USD
+            customer_id: cust-123
+    expect:
+      status: accepted
+      eventId: pay-001
+      message: Event payment.completed queued for processing
+      metadata:
+        processingTime: '*'
+        rateLimits:
+          requestsPerMinute: 1
+          remainingPerMinute: 299
+    mocks:
+      - nodeType: n8n-nodes-base.kafka
+        response:
+          partition: 2
+          offset: 67890
+      - nodeType: n8n-nodes-base.rabbitmq
+        nodeName: Payment Event Queue
+        response:
+          success: true
+          messageId: msg-payment-456
+      - workflowId: payment-processor
+        response:
+          processed: true
+          settlement_date: '2024-01-16T00:00:00.000Z'
+
+  - name: Duplicate event detection
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-123
+        body:
+          event_type: user.updated
+          event_id: evt-duplicate-001  # This ID already processed
+          timestamp: '2024-01-15T10:01:00.000Z'
+          data:
+            user_id: usr-789
+            changes:
+              email: updated@example.com
+    expect:
+      status: 400
+      error: Bad Request
+      message: Duplicate event detected
+    mocks:
+      - nodeType: n8n-nodes-base.elasticsearch
+        response:
+          _index: webhook-errors
+          _id: error-dup-001
+          result: created
+
+  - name: Order event with dynamic priority based on value
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-premium
+        body:
+          event_type: order.placed
+          event_id: ord-high-001
+          timestamp: '2024-01-15T10:02:00.000Z'
+          data:
+            order_id: ord-premium-123
+            customer_id: cust-vip-456
+            orderTotal: 5000.00
+            items: 25
+    expect:
+      status: accepted
+      eventId: ord-high-001
+      message: Event order.placed queued for processing
+      metadata:
+        processingTime: '*'
+        rateLimits:
+          requestsPerMinute: 1
+          remainingPerMinute: 299
+    mocks:
+      - nodeType: n8n-nodes-base.kafka
+        response:
+          partition: 1
+          offset: 34567
+      - nodeType: n8n-nodes-base.rabbitmq
+        nodeName: Order Event Queue
+        response:
+          success: true
+          messageId: msg-order-high-001
+          priority: 10  # High priority due to order value
+      - workflowId: order-processor
+        response:
+          processed: true
+          expedited: true
+
+  - name: Event timestamp too old
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-old
+        body:
+          event_type: user.created
+          event_id: evt-old-001
+          timestamp: '2024-01-15T09:00:00.000Z'  # More than 5 minutes old
+          data:
+            user_id: usr-old-123
+    expect:
+      status: 400
+      error: Bad Request
+      message: 'Event timestamp is too old (> 5 minutes)'
+    mocks:
+      - nodeType: n8n-nodes-base.elasticsearch
+        response:
+          _index: webhook-errors
+          _id: error-old-001
+          result: created
+
+  - name: Invalid event type
+    trigger:
+      node: Event Webhook
+      data:
+        headers: 
+          content-type: application/json
+          x-client-id: client-456
+        body:
+          event_type: unknown.event
+          event_id: evt-unknown-001
+          timestamp: '2024-01-15T10:00:00.000Z'
+          data:
+            some: data
+    expect:
+      status: 400
+      error: Bad Request
+      message: 'Invalid event type: unknown.event'
+    mocks:
+      - nodeType: n8n-nodes-base.elasticsearch
+        response:
+          _index: webhook-errors
+          _id: error-unknown-001
+          result: created

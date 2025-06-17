@@ -1,0 +1,105 @@
+{
+  "name": "Test Database Nodes",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "users",
+        "columns": "email,name",
+        "options": {}
+      },
+      "name": "Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "users",
+        "columns": "email,name"
+      },
+      "name": "MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "users",
+        "fields": "email,name"
+      },
+      "name": "MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "user:{{ $json.email }}",
+        "value": "={{ JSON.stringify($json) }}"
+      },
+      "name": "Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "operation": "index",
+        "index": "users",
+        "body": "={{ JSON.stringify($json) }}"
+      },
+      "name": "Elasticsearch",
+      "type": "n8n-nodes-base.elasticsearch",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: {\n  postgres: items[0].json,\n  mysql: items[1].json,\n  mongodb: items[2].json,\n  redis: items[3].json,\n  elasticsearch: items[4].json\n}}];"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "Postgres", "type": "main", "index": 0 },
+          { "node": "MySQL", "type": "main", "index": 0 },
+          { "node": "MongoDB", "type": "main", "index": 0 },
+          { "node": "Redis", "type": "main", "index": 0 },
+          { "node": "Elasticsearch", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Postgres": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 0 }]]
+    },
+    "MySQL": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 1 }]]
+    },
+    "MongoDB": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 2 }]]
+    },
+    "Redis": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 3 }]]
+    },
+    "Elasticsearch": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 4 }]]
+    }
+  }
+}

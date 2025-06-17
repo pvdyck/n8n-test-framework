@@ -1,0 +1,36 @@
+test: Incident Management Full Coverage
+workflow: ../../workflows/incident-management.json
+cases:
+  - name: P1 Critical outside hours
+    trigger:
+      webhook:
+        service: payment-service
+        severity: critical
+        description: Payment system down at night
+        affectedSystems:
+          - payments
+          - checkout
+  - name: P2 High weekend incident  
+    trigger:
+      webhook:
+        service: database-service
+        severity: high
+        description: Database replication lag
+        affectedSystems:
+          - database
+          - reporting
+  - name: P1 Business hours
+    trigger:
+      webhook:
+        service: api-service
+        severity: critical
+        description: API is down
+        affectedSystems:
+          - payments
+          - orders
+  - name: P3 Medium severity
+    trigger:
+      webhook:
+        service: monitoring
+        severity: medium
+        description: High memory usage

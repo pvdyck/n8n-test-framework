@@ -1,0 +1,38 @@
+test: Schema-based Sub-Workflow Test
+workflow: ../../workflows/test-schema-sub-workflow.json
+cases:
+  - name: Test sub-workflow with input schema mapping
+    input:
+      name: Alice Johnson
+      amount: 250.50
+      isPriority: true
+    expect:
+      orderId: ORD-12345
+      status: processed
+      customer:
+        name: Alice Johnson
+        tier: premium
+      order:
+        amount: 250.50
+        priority: high
+        discount: 10
+        finalAmount: 225.45
+      processing:
+        workflow: typed-sub-workflow
+        executionTime: 150
+    mocks:
+      - workflowId: typed-sub-workflow
+        response:
+          orderId: ORD-12345
+          status: processed
+          customer:
+            name: Alice Johnson
+            tier: premium
+          order:
+            amount: 250.50
+            priority: high
+            discount: 10
+            finalAmount: 225.45
+          processing:
+            workflow: typed-sub-workflow
+            executionTime: 150

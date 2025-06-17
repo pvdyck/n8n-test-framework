@@ -1,0 +1,57 @@
+{
+  "name": "Test Nested Sub-Workflows",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "workflow-level-1"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "name": "Call Level 1",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateIndividualFields",
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "total",
+              "aggregationFunction": "sum"
+            },
+            {
+              "fieldToAggregate": "count",
+              "aggregationFunction": "sum"
+            }
+          ]
+        }
+      },
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Call Level 1", "type": "main", "index": 0 }]]
+    },
+    "Call Level 1": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    }
+  }
+}

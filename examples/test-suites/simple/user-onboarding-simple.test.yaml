@@ -1,0 +1,25 @@
+test: User Onboarding
+workflow: ../../workflows/user-onboarding-automation.json
+cases:
+  - name: Standard user signup
+    trigger:
+      webhook:
+        email: john@example.com
+        password: secure123
+        firstName: John
+        lastName: Doe
+  - name: Enterprise user
+    trigger:
+      webhook:
+        email: enterprise@bigcorp.com
+        password: secure456
+        firstName: Jane
+        lastName: Smith
+        company: BigCorp
+        companySize: 500
+  - name: Invalid email
+    trigger:
+      webhook:
+        email: notanemail
+        password: test123
+        firstName: Test

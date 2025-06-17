@@ -1,0 +1,321 @@
+test: Multi-Workflow Orchestration System
+workflow: ../../workflows/orchestrator-main.json
+cases:
+  - name: Complete order processing through 5 sub-workflows
+    trigger:
+      node: Order Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          customerId: CUST-123
+          customerEmail: john@example.com
+          items:
+            - productId: PROD-456
+              quantity: 2
+              price: 29.99
+            - productId: PROD-789
+              quantity: 1
+              price: 149.99
+          totalAmount: 209.97
+          currency: USD
+          paymentMethod: credit_card
+          warehouse: main
+    expect:
+      status: completed
+      orderId: '*'
+      message: Order processed successfully
+      fulfillment:
+        status: fulfilled
+        trackingNumber: TRK-98765
+        estimatedDelivery: '2024-01-20T00:00:00.000Z'
+        warehouse: main
+        items:
+          - productId: PROD-456
+            quantity: 2
+            allocated: true
+          - productId: PROD-789
+            quantity: 1
+            allocated: true
+      confirmation:
+        emailSent: true
+        messageId: msg-conf-123
+        type: order_confirmation
+      totalWorkflowsExecuted: 5
+      processingTime: '*'
+    mocks:
+      # Sub-workflow 1: Customer Validation
+      - workflowId: customer-validator
+        response:
+          valid: true
+          customerId: CUST-123
+          email: john@example.com
+          creditScore: 750
+          paymentHistory: excellent
+          riskLevel: low
+          
+      # Sub-workflow 2: Inventory Check
+      - workflowId: inventory-checker
+        response:
+          available: true
+          warehouse: main
+          items:
+            - productId: PROD-456
+              requested: 2
+              available: 15
+              reserved: 2
+            - productId: PROD-789
+              requested: 1
+              available: 3
+              reserved: 1
+          trackingNumber: TRK-98765
+          
+      # Sub-workflow 3: Payment Processing
+      - workflowId: payment-processor
+        response:
+          success: true
+          transactionId: TXN-987654
+          amount: 209.97
+          currency: USD
+          method: credit_card
+          authCode: AUTH123
+          
+      # Sub-workflow 4: Order Fulfillment
+      - workflowId: order-fulfillment
+        response:
+          status: fulfilled
+          trackingNumber: TRK-98765
+          estimatedDelivery: '2024-01-20T00:00:00.000Z'
+          warehouse: main
+          items:
+            - productId: PROD-456
+              quantity: 2
+              allocated: true
+            - productId: PROD-789
+              quantity: 1
+              allocated: true
+              
+      # Sub-workflow 5: Notification Sender (async)
+      - workflowId: notification-sender
+        response:
+          emailSent: true
+          messageId: msg-conf-123
+          type: order_confirmation
+
+  - name: Order rejection due to inventory shortage across multiple workflows
+    trigger:
+      node: Order Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          customerId: CUST-456
+          customerEmail: jane@example.com
+          items:
+            - productId: PROD-001
+              quantity: 100
+              price: 19.99
+          totalAmount: 1999.00
+          currency: USD
+          paymentMethod: debit_card
+    expect:
+      status: rejected
+      orderId: '*'
+      message: Order could not be processed
+      errors:
+        customer: null
+        inventory: 'Insufficient stock: requested 100, available 5'
+        payment: null
+      rejection:
+        reason: inventory_shortage
+        refundIssued: false
+        customerNotified: true
+        emailSent: true
+        type: order_rejection
+      totalWorkflowsExecuted: 4
+      processingTime: '*'
+    mocks:
+      # Customer validation passes
+      - workflowId: customer-validator
+        response:
+          valid: true
+          customerId: CUST-456
+          email: jane@example.com
+          creditScore: 680
+          paymentHistory: good
+          riskLevel: medium
+          
+      # Inventory check fails
+      - workflowId: inventory-checker
+        response:
+          available: false
+          error: 'Insufficient stock: requested 100, available 5'
+          warehouse: main
+          items:
+            - productId: PROD-001
+              requested: 100
+              available: 5
+              shortfall: 95
+              
+      # Payment processing passes
+      - workflowId: payment-processor
+        response:
+          success: true
+          transactionId: TXN-555666
+          amount: 1999.00
+          currency: USD
+          method: debit_card
+          authCode: AUTH456
+          
+      # Order rejection workflow
+      - workflowId: order-rejection
+        response:
+          reason: inventory_shortage
+          refundIssued: false
+          customerNotified: true
+          emailSent: true
+          type: order_rejection
+
+  - name: Payment failure triggers rejection workflow chain
+    trigger:
+      node: Order Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          customerId: CUST-789
+          customerEmail: bob@example.com
+          items:
+            - productId: PROD-999
+              quantity: 1
+              price: 599.99
+          totalAmount: 599.99
+          currency: USD
+          paymentMethod: credit_card
+    expect:
+      status: rejected
+      orderId: '*'
+      message: Order could not be processed
+      errors:
+        customer: null
+        inventory: null
+        payment: 'Payment declined: insufficient funds'
+      rejection:
+        reason: payment_declined
+        refundIssued: false
+        customerNotified: true
+        emailSent: true
+        type: order_rejection
+      totalWorkflowsExecuted: 4
+      processingTime: '*'
+    mocks:
+      # Customer validation passes
+      - workflowId: customer-validator
+        response:
+          valid: true
+          customerId: CUST-789
+          email: bob@example.com
+          creditScore: 600
+          paymentHistory: fair
+          riskLevel: medium
+          
+      # Inventory check passes
+      - workflowId: inventory-checker
+        response:
+          available: true
+          warehouse: main
+          items:
+            - productId: PROD-999
+              requested: 1
+              available: 10
+              reserved: 1
+          trackingNumber: TRK-54321
+          
+      # Payment processing fails
+      - workflowId: payment-processor
+        response:
+          success: false
+          error: 'Payment declined: insufficient funds'
+          transactionId: null
+          amount: 599.99
+          currency: USD
+          method: credit_card
+          declineCode: INSUFFICIENT_FUNDS
+          
+      # Order rejection workflow
+      - workflowId: order-rejection
+        response:
+          reason: payment_declined
+          refundIssued: false
+          customerNotified: true
+          emailSent: true
+          type: order_rejection
+
+  - name: Customer validation failure prevents further processing
+    trigger:
+      node: Order Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          customerId: CUST-FRAUD
+          customerEmail: suspicious@spam.com
+          items:
+            - productId: PROD-EXPENSIVE
+              quantity: 50
+              price: 999.99
+          totalAmount: 49999.50
+          currency: USD
+          paymentMethod: credit_card
+    expect:
+      status: rejected
+      orderId: '*'
+      message: Order could not be processed
+      errors:
+        customer: 'Customer flagged for fraud risk'
+        inventory: null
+        payment: null
+      rejection:
+        reason: customer_validation_failed
+        refundIssued: false
+        customerNotified: false
+        securityAlerted: true
+        type: security_rejection
+      totalWorkflowsExecuted: 4
+      processingTime: '*'
+    mocks:
+      # Customer validation fails
+      - workflowId: customer-validator
+        response:
+          valid: false
+          error: 'Customer flagged for fraud risk'
+          customerId: CUST-FRAUD
+          email: suspicious@spam.com
+          creditScore: 400
+          paymentHistory: poor
+          riskLevel: high
+          fraudFlags: [unusual_order_pattern, high_value_first_order, suspicious_email]
+          
+      # Inventory and payment would pass but aren't relevant
+      - workflowId: inventory-checker
+        response:
+          available: true
+          warehouse: main
+          items:
+            - productId: PROD-EXPENSIVE
+              requested: 50
+              available: 100
+              reserved: 50
+              
+      - workflowId: payment-processor
+        response:
+          success: true
+          transactionId: TXN-SHOULDNT-HAPPEN
+          amount: 49999.50
+          currency: USD
+          method: credit_card
+          
+      # Security-focused rejection workflow
+      - workflowId: order-rejection
+        response:
+          reason: customer_validation_failed
+          refundIssued: false
+          customerNotified: false
+          securityAlerted: true
+          type: security_rejection

@@ -1,0 +1,83 @@
+test: Trigger Node Types Test
+workflow: ../../workflows/test-trigger-nodes.json
+cases:
+  - name: Test webhook trigger
+    trigger:
+      node: Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body: { test: data, from: webhook }
+    expect:
+      webhook:
+        headers: { 'content-type': 'application/json' }
+        body: { test: data, from: webhook }
+      schedule: {}
+      email: {}
+      mqtt: {}
+      github: {}
+      
+  - name: Test schedule trigger
+    trigger:
+      node: Schedule Trigger
+      data: { triggered_at: '2024-01-01T12:00:00.000Z' }
+    expect:
+      webhook: {}
+      schedule: { triggered_at: '2024-01-01T12:00:00.000Z' }
+      email: {}
+      mqtt: {}
+      github: {}
+      
+  - name: Test email trigger
+    trigger:
+      node: Email Trigger
+      data:
+        from: sender@example.com
+        subject: Test Email
+        text: Email content
+        html: '<p>Email content</p>'
+    expect:
+      webhook: {}
+      schedule: {}
+      email:
+        from: sender@example.com
+        subject: Test Email
+        text: Email content
+        html: '<p>Email content</p>'
+      mqtt: {}
+      github: {}
+      
+  - name: Test MQTT trigger
+    trigger:
+      node: MQTT Trigger
+      data:
+        topic: test-topic
+        message: '{"sensor": "temp", "value": 25.5}'
+    expect:
+      webhook: {}
+      schedule: {}
+      email: {}
+      mqtt:
+        topic: test-topic
+        message: '{"sensor": "temp", "value": 25.5}'
+      github: {}
+      
+  - name: Test GitHub trigger
+    trigger:
+      node: GitHub Trigger
+      data:
+        action: opened
+        pull_request:
+          id: 123
+          title: Test PR
+          user: { login: testuser }
+    expect:
+      webhook: {}
+      schedule: {}
+      email: {}
+      mqtt: {}
+      github:
+        action: opened
+        pull_request:
+          id: 123
+          title: Test PR
+          user: { login: testuser }

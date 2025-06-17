@@ -1,0 +1,319 @@
+test: Complex Multi-Level Workflow Chain
+workflow: ../../workflows/complex-workflow-chain.json
+cases:
+  - name: Successful 8-level deep workflow chain processing 3 batches
+    trigger:
+      node: Batch Processing Trigger
+      data: { triggered_at: '2024-01-15T10:00:00.000Z' }
+    expect:
+      summary:
+        totalBatches: 3
+        totalRecords: 2700  # 3 batches × 900 records each
+        successfulBatches: 3
+        failedBatches: 0
+        successRate: '100.00%'
+        workflowChainDepth: 8
+        totalSubWorkflowsExecuted: 21  # 3 batches × 7 workflows each
+        processingStarted: '2024-01-15T10:00:00.000Z'
+        processingCompleted: '*'
+      allResults: '*'  # Large dataset
+      errors: []
+    mocks:
+      # Level 1: Data Extraction
+      - workflowId: data-extractor
+        response:
+          extractedRecords:
+            - id: 1
+              data: record_1_data
+            - id: 2
+              data: record_2_data
+            # ... 1000 records total, will be split into 3 batches of ~333 each
+          batchInfo:
+            totalExtracted: 1000
+            lastProcessedId: 1000
+            
+      # Level 2: Data Transformation (called 3 times for 3 batches)
+      - workflowId: data-transformer
+        response:
+          transformedRecords:
+            - id: 1
+              originalData: record_1_data
+              transformedData: transformed_record_1
+              enrichmentFlags: [geo_coded, categorized]
+            - id: 2
+              originalData: record_2_data
+              transformedData: transformed_record_2
+              enrichmentFlags: [geo_coded, categorized]
+          batchId: '*'
+          transformationStats:
+            recordsProcessed: 333
+            transformationsApplied: 5
+            
+      # Level 3: Data Validation (called 3 times)
+      - workflowId: data-validator
+        response:
+          validRecords:
+            - id: 1
+              transformedData: transformed_record_1
+              validationScore: 0.95
+              validationPassed: true
+            - id: 2
+              transformedData: transformed_record_2
+              validationScore: 0.92
+              validationPassed: true
+          invalidRecords: []
+          validationStats:
+            totalChecked: 333
+            passed: 300
+            failed: 0
+            warnings: 33
+          batchId: '*'
+          
+      # Level 4: ML Analysis (called 3 times)
+      - workflowId: ml-analyzer
+        response:
+          analysisResults:
+            - id: 1
+              anomalyScore: 0.05
+              classification: normal
+              confidence: 0.98
+              features: [feature_1, feature_2, feature_3]
+            - id: 2
+              anomalyScore: 0.12
+              classification: normal
+              confidence: 0.94
+              features: [feature_1, feature_2, feature_3]
+          modelInfo:
+            version: v2.1
+            accuracy: 0.97
+            processingTime: 150
+            
+      # Level 5: Data Enrichment (called 3 times)
+      - workflowId: data-enricher
+        response:
+          enrichedRecords:
+            - id: 1
+              coreData: transformed_record_1
+              enrichments:
+                geolocation: { lat: 40.7128, lng: -74.0060 }
+                demographics: { age_group: '25-34', income_bracket: 'middle' }
+                behavioral: { segment: 'engaged_user', lifetime_value: 1200 }
+            - id: 2
+              coreData: transformed_record_2
+              enrichments:
+                geolocation: { lat: 34.0522, lng: -118.2437 }
+                demographics: { age_group: '35-44', income_bracket: 'high' }
+                behavioral: { segment: 'premium_user', lifetime_value: 3500 }
+          enrichmentStats:
+            sourcesQueried: 5
+            enrichmentRate: 0.95
+            apiCallsUsed: 1500
+            
+      # Level 6: Data Loading (called 3 times)
+      - workflowId: data-loader
+        response:
+          loadedRecords:
+            - id: 1
+              status: loaded
+              tableName: customer_analytics
+              loadTimestamp: '2024-01-15T10:05:00.000Z'
+            - id: 2
+              status: loaded
+              tableName: customer_analytics
+              loadTimestamp: '2024-01-15T10:05:00.000Z'
+          loadStats:
+            recordsLoaded: 300
+            recordsFailed: 0
+            loadStrategy: upsert
+            duration: 250
+            
+      # Level 7: Index Building (async, called 3 times)
+      - workflowId: index-builder
+        response:
+          indexStatus: success
+          documentsIndexed: 300
+          indexName: customer_search_v2
+          refreshTime: '2024-01-15T10:06:00.000Z'
+          
+      # Level 8: Report Generation (async, called once)
+      - workflowId: report-generator
+        response:
+          reportGenerated: true
+          reportId: RPT-20240115-100000
+          distributionChannels: [email, slack, dashboard]
+          recipients: 15
+
+  - name: Workflow chain with validation failures and error handling
+    trigger:
+      node: Batch Processing Trigger
+      data: { triggered_at: '2024-01-15T11:00:00.000Z' }
+    expect:
+      summary:
+        totalBatches: 2
+        totalRecords: 1200  # 1 successful batch × 600 records + 0 from failed batch
+        successfulBatches: 1
+        failedBatches: 1
+        successRate: '50.00%'
+        workflowChainDepth: 8
+        totalSubWorkflowsExecuted: 14  # 2 batches × 7 workflows each
+        processingStarted: '2024-01-15T11:00:00.000Z'
+        processingCompleted: '*'
+      allResults: '*'
+      errors: ['Batch validation failed: 80% of records had quality issues']
+    mocks:
+      # Data extraction succeeds
+      - workflowId: data-extractor
+        response:
+          extractedRecords:
+            - id: 1001
+              data: good_record_data
+            - id: 1002
+              data: corrupted_data_###
+          batchInfo:
+            totalExtracted: 600
+            lastProcessedId: 1600
+            
+      # Transformation succeeds for both batches
+      - workflowId: data-transformer
+        response:
+          transformedRecords:
+            - id: 1001
+              originalData: good_record_data
+              transformedData: transformed_good_record
+              enrichmentFlags: [geo_coded]
+            - id: 1002
+              originalData: corrupted_data_###
+              transformedData: null
+              enrichmentFlags: []
+          batchId: '*'
+          transformationStats:
+            recordsProcessed: 300
+            transformationsApplied: 2
+            
+      # Validation fails for second batch
+      - workflowId: data-validator
+        response:
+          validRecords:
+            # First call (batch 1) - success
+            - id: 1001
+              transformedData: transformed_good_record
+              validationScore: 0.95
+              validationPassed: true
+          invalidRecords:
+            # Second call (batch 2) - mostly failures
+            - id: 1002
+              transformedData: null
+              validationScore: 0.15
+              validationPassed: false
+              errors: ['null_transformation', 'corrupted_source']
+          validationStats:
+            totalChecked: 300
+            passed: 60  # Only 20% pass for failed batch
+            failed: 240
+            warnings: 0
+          batchId: '*'
+          
+      # ML Analysis only called for successful batch
+      - workflowId: ml-analyzer
+        response:
+          analysisResults:
+            - id: 1001
+              anomalyScore: 0.08
+              classification: normal
+              confidence: 0.96
+              features: [feature_1, feature_2]
+          modelInfo:
+            version: v2.1
+            accuracy: 0.97
+            processingTime: 120
+            
+      # Data enrichment only for successful batch
+      - workflowId: data-enricher
+        response:
+          enrichedRecords:
+            - id: 1001
+              coreData: transformed_good_record
+              enrichments:
+                geolocation: { lat: 51.5074, lng: -0.1278 }
+                demographics: { age_group: '45-54', income_bracket: 'high' }
+                behavioral: { segment: 'loyal_customer', lifetime_value: 2800 }
+          enrichmentStats:
+            sourcesQueried: 3
+            enrichmentRate: 0.98
+            apiCallsUsed: 180
+            
+      # Data loading only for successful batch
+      - workflowId: data-loader
+        response:
+          loadedRecords:
+            - id: 1001
+              status: loaded
+              tableName: customer_analytics
+              loadTimestamp: '2024-01-15T11:05:00.000Z'
+          loadStats:
+            recordsLoaded: 60
+            recordsFailed: 0
+            loadStrategy: upsert
+            duration: 80
+            
+      # Error handler called for failed batch
+      - workflowId: error-handler
+        response:
+          errorProcessed: true
+          quarantineLocation: error_queue_batch_2
+          notificationsSent: [data_team, ops_team]
+          retryScheduled: false
+          error: 'Batch validation failed: 80% of records had quality issues'
+          
+      # Index building for successful records
+      - workflowId: index-builder
+        response:
+          indexStatus: success
+          documentsIndexed: 60
+          indexName: customer_search_v2
+          refreshTime: '2024-01-15T11:06:00.000Z'
+          
+      # Report includes failure analysis
+      - workflowId: report-generator
+        response:
+          reportGenerated: true
+          reportId: RPT-20240115-110000
+          distributionChannels: [email, slack, dashboard]
+          alertLevel: warning
+          failureAnalysis: included
+
+  - name: Complete processing failure stops workflow chain early
+    trigger:
+      node: Batch Processing Trigger
+      data: { triggered_at: '2024-01-15T12:00:00.000Z' }
+    expect:
+      summary:
+        totalBatches: 0
+        totalRecords: 0
+        successfulBatches: 0
+        failedBatches: 0
+        successRate: '0%'
+        workflowChainDepth: 8
+        totalSubWorkflowsExecuted: 0
+        processingStarted: '2024-01-15T12:00:00.000Z'
+        processingCompleted: '*'
+      allResults: []
+      errors: []
+    mocks:
+      # Data extraction fails completely
+      - workflowId: data-extractor
+        response:
+          extractedRecords: []
+          batchInfo:
+            totalExtracted: 0
+            lastProcessedId: 0
+            error: 'Database connection timeout'
+            
+      # Report generator still called to log the failure
+      - workflowId: report-generator
+        response:
+          reportGenerated: true
+          reportId: RPT-20240115-120000
+          distributionChannels: [email, slack]
+          alertLevel: critical
+          failureReason: extraction_failed

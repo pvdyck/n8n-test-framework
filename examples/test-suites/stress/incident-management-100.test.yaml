@@ -1,0 +1,271 @@
+test: Incident Management System - Full Coverage
+description: Comprehensive tests for incident management workflow including after-hours scenarios
+workflow: ../../workflows/incident-management.json
+
+cases:
+  - name: P1 Critical incident during business hours
+    description: Test critical incident response during working hours
+    trigger:
+      type: webhook
+      nodeName: Incident Alert Webhook
+      config:
+        method: POST
+        body:
+          service: api-service
+          severity: critical
+          description: Complete API outage affecting all services
+          affectedSystems:
+            - payments
+            - orders
+            - authentication
+          reportedBy: monitoring-system
+          source: datadog
+          environment: production
+          metrics:
+            errorRate: 100
+            responseTime: 0
+    mocks:
+      - nodeName: Create JIRA Ticket
+        output:
+          json:
+            key: OPS-1234
+            id: "10001"
+            self: "https://jira.example.com/rest/api/2/issue/10001"
+      - nodeName: Create PagerDuty Incident
+        output:
+          json:
+            id: "PINC123"
+            incident_number: 123
+            status: "triggered"
+            html_url: "https://company.pagerduty.com/incidents/PINC123"
+      - nodeName: Alert Critical Channel
+        output:
+          json:
+            ok: true
+            ts: "1234567890.123456"
+            channel: "#incidents-critical"
+      - nodeName: Log to Database
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Update Status Page
+        output:
+          json:
+            id: "inc_123"
+            status: "investigating"
+    expectedOutputs:
+      json:
+        success: true
+        incidentId: "__regex:INC-\\d+-[A-Z0-9]{6}"
+        message: "Incident created and teams notified"
+        details:
+          severity: "P1"
+          service: "api-service"
+          status: "active"
+          jiraTicket: "OPS-1234"
+          pagerDutyId: "PINC123"
+          assignedTeam: "engineering"
+          escalationLevel: 3
+
+  - name: P1 Critical incident outside business hours
+    description: Test critical incident with SMS alerts during night hours
+    trigger:
+      type: webhook
+      nodeName: Incident Alert Webhook
+      config:
+        method: POST
+        body:
+          service: payment-service
+          severity: critical
+          description: Payment processing completely down
+          affectedSystems:
+            - payments
+            - checkout
+          reportedBy: on-call-engineer
+          source: manual
+          environment: production
+    mocks:
+      - nodeName: Process Incident Data
+        output:
+          json:
+            incidentId: "INC-1234567890-ABC123"
+            service: "payment-service"
+            severity: "P1"
+            severityNumeric: 1
+            description: "Payment processing completely down"
+            affectedSystems: ["payments", "checkout"]
+            reportedBy: "on-call-engineer"
+            escalationLevel: 3
+            assigneeTeam: "engineering"
+            isBusinessHours: false  # Force outside business hours
+            createdAt: "2024-01-15T03:30:00.000Z"
+            status: "open"
+            source: "manual"
+            metrics: {}
+            environment: "production"
+      - nodeName: Create JIRA Ticket
+        output:
+          json:
+            key: OPS-1235
+            id: "10002"
+      - nodeName: Create PagerDuty Incident
+        output:
+          json:
+            id: "PINC124"
+            incident_number: 124
+      - nodeName: Alert Critical Channel
+        output:
+          json:
+            ok: true
+            ts: "1234567891.123456"
+      - nodeName: Log to Database
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Send SMS Alert
+        output:
+          json:
+            sid: "SM123456789"
+            status: "sent"
+            to: ["+1987654321", "+1876543210"]
+            body: "URGENT: P1 incident on payment-service. ID: INC-1234567890-ABC123. Check Slack for details."
+      - nodeName: Update Status Page
+        output:
+          json:
+            id: "inc_124"
+            status: "investigating"
+    expectedOutputs:
+      json:
+        success: true
+        incidentId: "INC-1234567890-ABC123"
+        message: "Incident created and teams notified"
+        details:
+          severity: "P1"
+          service: "payment-service"
+          assignedTeam: "engineering"
+          escalationLevel: 3
+
+  - name: P3 Medium severity during business hours
+    description: Test medium priority incident during working hours
+    trigger:
+      type: webhook
+      nodeName: Incident Alert Webhook
+      config:
+        method: POST
+        body:
+          service: monitoring-service
+          severity: medium
+          description: High memory usage detected
+          affectedSystems:
+            - monitoring
+          reportedBy: automated-monitoring
+          source: prometheus
+          environment: staging
+          metrics:
+            memoryUsage: 85
+    mocks:
+      - nodeName: Create JIRA Ticket
+        output:
+          json:
+            key: OPS-1236
+            id: "10003"
+      - nodeName: Alert General Channel
+        output:
+          json:
+            ok: true
+            ts: "1234567892.123456"
+            channel: "#incidents"
+      - nodeName: Log to Database
+        output:
+          json:
+            success: true
+            rowCount: 1
+    expectedOutputs:
+      json:
+        success: true
+        incidentId: "__regex:INC-\\d+-[A-Z0-9]{6}"
+        message: "Incident created and teams notified"
+        details:
+          severity: "P3"
+          service: "monitoring-service"
+          status: "active"
+          jiraTicket: "OPS-1236"
+
+  - name: P2 High severity outside business hours
+    description: Test P2 incident triggering SMS alerts on weekend
+    trigger:
+      type: webhook
+      nodeName: Incident Alert Webhook
+      config:
+        method: POST
+        body:
+          service: database-service
+          severity: high
+          description: Database replication lag detected
+          affectedSystems:
+            - database
+            - reporting
+          reportedBy: monitoring-system
+          environment: production
+    mocks:
+      - nodeName: Process Incident Data
+        output:
+          json:
+            incidentId: "INC-1234567891-DEF456"
+            service: "database-service"
+            severity: "P2"
+            severityNumeric: 2
+            description: "Database replication lag detected"
+            affectedSystems: ["database", "reporting"]
+            reportedBy: "monitoring-system"
+            escalationLevel: 2
+            assigneeTeam: "devops"
+            isBusinessHours: false  # Weekend - outside business hours
+            createdAt: "2024-01-13T14:00:00.000Z"
+            status: "open"
+            source: "webhook"
+            metrics: {}
+            environment: "production"
+      - nodeName: Create JIRA Ticket
+        output:
+          json:
+            key: OPS-1237
+            id: "10004"
+      - nodeName: Create PagerDuty Incident
+        output:
+          json:
+            id: "PINC125"
+            incident_number: 125
+      - nodeName: Alert Critical Channel
+        output:
+          json:
+            ok: true
+            ts: "1234567893.123456"
+      - nodeName: Log to Database
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Send SMS Alert
+        output:
+          json:
+            sid: "SM123456790"
+            status: "sent"
+            to: ["+1987654321"]
+            body: "URGENT: P2 incident on database-service. ID: INC-1234567891-DEF456. Check Slack for details."
+      - nodeName: Update Status Page
+        output:
+          json:
+            id: "inc_125"
+            status: "investigating"
+    expectedOutputs:
+      json:
+        success: true
+        incidentId: "INC-1234567891-DEF456"
+        message: "Incident created and teams notified"
+        details:
+          severity: "P2"
+          service: "database-service"
+          assignedTeam: "devops"

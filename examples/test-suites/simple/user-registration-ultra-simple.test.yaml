@@ -1,0 +1,18 @@
+test: User Registration Ultra Simple
+workflow: ../../workflows/user-registration.json
+cases:
+  - name: New user signs up
+    input:
+      email: mary@example.com
+      name: Mary Smith
+    expect:
+      userId: user-mary-123
+      emailSent: true
+      onboardingStatus: completed
+      
+  - name: Email validation fails
+    input:
+      email: not-an-email
+      name: Invalid User
+    expect:
+      error: Invalid email format

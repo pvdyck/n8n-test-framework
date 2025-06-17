@@ -1,0 +1,90 @@
+test: Trigger Node Tests
+workflow: ../../workflows/webhook-trigger.json
+cases:
+  - name: Webhook Trigger - Valid Registration
+    trigger:
+      type: webhook
+      nodeId: webhook-trigger
+      config:
+        type: webhook
+        path: user-registration
+        method: POST
+        headers:
+          Content-Type: application/json
+        body:
+          email: newuser@example.com
+          name: John Doe
+        expectedStatus: 200
+        expectedResponse:
+          success: true
+          userId: '*'
+          message: User created successfully
+    expect:
+      success: true
+      userId: user-123
+      message: User created successfully
+    triggerTimeout: 5000
+  - name: Webhook Trigger - Invalid Email
+    trigger:
+      type: webhook
+      nodeId: webhook-trigger
+      config:
+        type: webhook
+        path: user-registration
+        method: POST
+        body:
+          email: invalidemail
+          name: John Doe
+        expectedStatus: 500
+    expect:
+      error: Invalid email address
+    triggerTimeout: 5000
+  - name: Schedule Trigger - API Healthy
+    trigger:
+      type: schedule
+      nodeId: schedule-trigger
+      config:
+        type: schedule
+        cron: 0 */5 * * * *
+        triggerNow: true
+        triggerCount: 1
+    expect:
+      status: healthy
+      checkedAt: '*'
+  - name: Schedule Trigger - API Unhealthy
+    trigger:
+      type: schedule
+      nodeId: schedule-trigger
+      config:
+        type: schedule
+        cron: 0 */5 * * * *
+        triggerNow: true
+    expect:
+      success: true
+      messageId: alert-123
+  - name: Email Trigger - Update Existing Ticket
+    trigger:
+      type: email
+      config:
+        type: email
+        from: customer@example.com
+        to: support@example.com
+        subject: 'Re: [TICKET-12345] Order Issue'
+        body: This is an update to my previous ticket about the order issue.
+    expect:
+      id: '12345'
+      status: updated
+      updatedAt: '*'
+  - name: Email Trigger - Create New Ticket
+    trigger:
+      type: email
+      config:
+        type: email
+        from: newcustomer@example.com
+        to: support@example.com
+        subject: New Issue with Product
+        body: I'm having trouble with the product I purchased.
+    expect:
+      id: '67890'
+      status: created
+      createdAt: '*'

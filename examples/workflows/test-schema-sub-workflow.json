@@ -1,0 +1,38 @@
+{
+  "name": "Test Schema Sub-Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "typed-sub-workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customerName": "={{ $json.name }}",
+            "orderAmount": "={{ $json.amount }}",
+            "priority": "={{ $json.isPriority ? 'high' : 'normal' }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Execute Typed Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Execute Typed Workflow", "type": "main", "index": 0 }]]
+    }
+  }
+}

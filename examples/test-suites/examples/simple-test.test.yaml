@@ -1,0 +1,9 @@
+test: Simple Test Suite
+workflow: ../../workflows/simple-test.json
+cases:
+  - name: Should process data with Set and Function nodes
+    expect:
+      message: Hello Test
+      count: 42
+      processed: true
+      timestamp: '*'

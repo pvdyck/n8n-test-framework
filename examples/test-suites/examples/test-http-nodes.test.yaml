@@ -1,0 +1,28 @@
+test: HTTP Node Types Test
+workflow: ../../workflows/test-http-nodes.json
+cases:
+  - name: Test all HTTP node types
+    input:
+      email: test@example.com
+      name: Test User
+    expect:
+      get:
+        users:
+          - id: 1
+            name: John Doe
+          - id: 2
+            name: Jane Smith
+      post:
+        id: 3
+        email: test@example.com
+        name: Test User
+        created: true
+      graphql:
+        data:
+          users:
+            - id: 1
+              name: John Doe
+              email: john@example.com
+            - id: 2
+              name: Jane Smith
+              email: jane@example.com

@@ -1,0 +1,106 @@
+{
+  "name": "Test Cloud Service Nodes",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "invoke",
+        "functionName": "test-function",
+        "payload": "={{ JSON.stringify($json) }}"
+      },
+      "name": "AWS Lambda",
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "service": "translate",
+        "operation": "translate",
+        "text": "={{ $json.text }}",
+        "targetLanguage": "es"
+      },
+      "name": "Google Cloud",
+      "type": "n8n-nodes-base.googleCloudNaturalLanguage",
+      "typeVersion": 1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "containerName": "test-container",
+        "blobName": "test-blob.json",
+        "data": "={{ JSON.stringify($json) }}"
+      },
+      "name": "Azure Storage",
+      "type": "n8n-nodes-base.microsoftAzureBlobStorage",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "analyze",
+        "text": "={{ $json.text }}",
+        "detectLanguage": true,
+        "detectSentiment": true
+      },
+      "name": "IBM Watson",
+      "type": "n8n-nodes-base.watsonNaturalLanguageUnderstanding",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "type": "compute"
+      },
+      "name": "DigitalOcean",
+      "type": "n8n-nodes-base.digitalOcean",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: {\n  lambda: items[0].json,\n  googleCloud: items[1].json,\n  azure: items[2].json,\n  watson: items[3].json,\n  digitalOcean: items[4].json\n}}];"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "AWS Lambda", "type": "main", "index": 0 },
+          { "node": "Google Cloud", "type": "main", "index": 0 },
+          { "node": "Azure Storage", "type": "main", "index": 0 },
+          { "node": "IBM Watson", "type": "main", "index": 0 },
+          { "node": "DigitalOcean", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "AWS Lambda": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 0 }]]
+    },
+    "Google Cloud": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 1 }]]
+    },
+    "Azure Storage": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 2 }]]
+    },
+    "IBM Watson": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 3 }]]
+    },
+    "DigitalOcean": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 4 }]]
+    }
+  }
+}

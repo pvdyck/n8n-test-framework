@@ -1,0 +1,36 @@
+test: Data Processing Tests
+workflow: ../../workflows/data-processing.json
+cases:
+  - name: Process CSV data
+    input:
+      csvData: name,age\nJohn,30\nJane,25\nBob,35
+    expect:
+      processed: 3
+      transformed:
+        - name: John
+          age: 30
+          email: john@example.com
+        - name: Jane
+          age: 25
+          email: jane@example.com
+        - name: Bob
+          age: 35
+          email: bob@example.com
+    mocks: {}
+  - name: Empty data handling
+    input:
+      items: []
+    expect:
+      processed: 0
+      errors: []
+      status: success
+    mocks: {}
+  - name: Invalid data
+    input:
+      record:
+        name: Test
+    expect:
+      valid: false
+      errors:
+        - 'Missing required field: email'
+    mocks: {}

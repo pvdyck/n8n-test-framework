@@ -1,0 +1,32 @@
+test: Sub-Workflow Error Handling Test
+workflow: ../../workflows/test-sub-workflow-errors.json
+cases:
+  - name: Test sub-workflow error is handled gracefully
+    input:
+      action: trigger_error
+      data: Some test data
+    expect:
+      status: error_handled
+      errorMessage: Sub-workflow execution failed
+    mocks:
+      - workflowId: error-prone-workflow
+        response:
+          error:
+            message: Sub-workflow execution failed
+            code: SUB_WF_ERROR
+            
+  - name: Test sub-workflow success path
+    input:
+      action: process_normally
+      data: Valid data
+    expect:
+      status: success
+      result:
+        processed: true
+        data: Valid data processed
+    mocks:
+      - workflowId: error-prone-workflow
+        response:
+          result:
+            processed: true
+            data: Valid data processed

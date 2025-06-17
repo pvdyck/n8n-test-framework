@@ -1,0 +1,231 @@
+test: AI Multi-Agent Customer Support System
+workflow: ../../workflows/ai-multi-agent-system.json
+cases:
+  - name: Technical support query with successful resolution
+    trigger:
+      node: Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          message: "I can't login to Product A. I keep getting an error message."
+          customerId: "CUST-789"
+          sessionId: "session-123"
+    expect:
+      response: "I understand you're having trouble logging into Product A. This is a common issue that can usually be resolved by clearing your browser cache. Here's how to fix it:\n\n1. Clear your browser cache and cookies\n2. Restart your browser\n3. Try logging in again\n\nIf the issue persists, please ensure you're using version 2.5 or later. You can check your version in the app settings. Would you like me to guide you through any of these steps?"
+      metadata:
+        sessionId: session-123
+        intent: technical_support
+        sentiment: negative
+        agentType: 0
+        qualityScore: 100
+        qualityChecks:
+          hasResponse: true
+          isPolite: true
+          hasActionableInfo: true
+          lengthAppropriate: true
+        timestamp: '2024-01-15T10:00:00.000Z'
+        processingTime: 2500
+    mocks:
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Intent Classifier Agent
+        response:
+          message:
+            content: '{"intent":"technical_support","entities":{"product":"Product A","issue":"login error"},"sentiment":"negative"}'
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Technical Support Agent
+        response:
+          message:
+            content: "I understand you're having trouble logging into Product A. This is a common issue that can usually be resolved by clearing your browser cache. Here's how to fix it:\n\n1. Clear your browser cache and cookies\n2. Restart your browser\n3. Try logging in again\n\nIf the issue persists, please ensure you're using version 2.5 or later. You can check your version in the app settings. Would you like me to guide you through any of these steps?"
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Log Interaction
+        response:
+          success: true
+          id: 'log-456'
+
+  - name: Billing inquiry with data lookup
+    trigger:
+      node: Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          message: "Why was I charged twice last month? My account shows two payments of $49.99"
+          customerId: "CUST-456"
+    expect:
+      response: "I've reviewed your billing history and I can see the issue you're referring to. You have two charges of $49.99 from last month:\n\n1. March 1st - Regular monthly subscription\n2. March 15th - This was actually a prorated charge for upgrading your plan mid-month\n\nThe second charge covers the difference between your basic and premium plan for the remaining days in March. Starting April, you'll see a single charge of $79.99 for the premium plan. I apologize for any confusion this may have caused. Would you like me to email you a detailed breakdown?"
+      metadata:
+        sessionId: '*'
+        intent: billing_inquiry
+        sentiment: negative
+        agentType: 1
+        qualityScore: 100
+        qualityChecks:
+          hasResponse: true
+          isPolite: true
+          hasActionableInfo: true
+          lengthAppropriate: true
+        timestamp: '*'
+        processingTime: '*'
+    mocks:
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Intent Classifier Agent
+        response:
+          message:
+            content: '{"intent":"billing_inquiry","entities":{"amount":"49.99","frequency":"twice","timeframe":"last month"},"sentiment":"negative"}'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Fetch Billing Data
+        response:
+          - transaction_id: TXN-001
+            amount: 49.99
+            description: "Monthly subscription - Basic"
+            created_at: "2024-03-01T00:00:00Z"
+          - transaction_id: TXN-002
+            amount: 49.99
+            description: "Plan upgrade - Basic to Premium (prorated)"
+            created_at: "2024-03-15T00:00:00Z"
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Billing Agent
+        response:
+          message:
+            content: "I've reviewed your billing history and I can see the issue you're referring to. You have two charges of $49.99 from last month:\n\n1. March 1st - Regular monthly subscription\n2. March 15th - This was actually a prorated charge for upgrading your plan mid-month\n\nThe second charge covers the difference between your basic and premium plan for the remaining days in March. Starting April, you'll see a single charge of $79.99 for the premium plan. I apologize for any confusion this may have caused. Would you like me to email you a detailed breakdown?"
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Log Interaction
+        response:
+          success: true
+          id: 'log-789'
+
+  - name: Product information with vector search
+    trigger:
+      node: Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          message: "What's the difference between Product A and Product B? I need something for team collaboration."
+          customerId: "CUST-321"
+    expect:
+      response: "Great question! Let me help you choose between Product A and Product B for team collaboration:\n\n**Product A (v2.5)** - Best for small to medium teams\n- Real-time collaboration for up to 50 users\n- Built-in video conferencing\n- Price: $29.99/month per user\n- Ideal for: Agile teams, creative projects\n\n**Product B (v1.8)** - Enterprise-grade solution\n- Unlimited users with advanced permissions\n- Integration with 100+ business tools\n- Price: $49.99/month per user\n- Ideal for: Large organizations, complex workflows\n\nFor team collaboration specifically, Product A would be my recommendation unless you need enterprise features. It's more user-friendly and cost-effective for most teams. Would you like to start a free trial?"
+      metadata:
+        sessionId: '*'
+        intent: product_information
+        sentiment: neutral
+        agentType: 2
+        qualityScore: 100
+        qualityChecks:
+          hasResponse: true
+          isPolite: true
+          hasActionableInfo: true
+          lengthAppropriate: true
+        timestamp: '*'
+        processingTime: '*'
+    mocks:
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Intent Classifier Agent
+        response:
+          message:
+            content: '{"intent":"product_information","entities":{"products":["Product A","Product B"],"use_case":"team collaboration"},"sentiment":"neutral"}'
+      - nodeType: n8n-nodes-base.qdrant
+        response:
+          - id: "vec-001"
+            score: 0.95
+            payload:
+              name: "Product A"
+              description: "Real-time collaboration tool"
+              features: ["video conferencing", "file sharing", "task management"]
+              price: 29.99
+              version: "2.5"
+          - id: "vec-002"
+            score: 0.89
+            payload:
+              name: "Product B"
+              description: "Enterprise collaboration platform"
+              features: ["unlimited users", "advanced permissions", "API access"]
+              price: 49.99
+              version: "1.8"
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Product Info Agent
+        response:
+          message:
+            content: "Great question! Let me help you choose between Product A and Product B for team collaboration:\n\n**Product A (v2.5)** - Best for small to medium teams\n- Real-time collaboration for up to 50 users\n- Built-in video conferencing\n- Price: $29.99/month per user\n- Ideal for: Agile teams, creative projects\n\n**Product B (v1.8)** - Enterprise-grade solution\n- Unlimited users with advanced permissions\n- Integration with 100+ business tools\n- Price: $49.99/month per user\n- Ideal for: Large organizations, complex workflows\n\nFor team collaboration specifically, Product A would be my recommendation unless you need enterprise features. It's more user-friendly and cost-effective for most teams. Would you like to start a free trial?"
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Log Interaction
+        response:
+          success: true
+          id: 'log-012'
+
+  - name: Complaint with resolution offer
+    trigger:
+      node: Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          message: "This is ridiculous! I've been trying to export my data for 3 days and it keeps failing. This is costing me business!"
+          customerId: "CUST-999"
+    expect:
+      response: "I sincerely apologize for the frustration you're experiencing with the export feature. I completely understand how this is impacting your business, and this is not the level of service we strive to provide.\n\nI have an immediate solution for you: Please use the CSV format option instead of the default export. This is a known workaround that will allow you to export your data successfully right now.\n\nAdditionally, to make up for this inconvenience:\n1. I'm applying a 15% discount to your next invoice\n2. I'm escalating this to our engineering team for a permanent fix\n3. I'll personally ensure you're notified once the issue is resolved\n\nWould you like me to guide you through the CSV export process right now? I'm here to ensure you get your data immediately."
+      metadata:
+        sessionId: '*'
+        intent: complaint
+        sentiment: negative
+        agentType: 3
+        qualityScore: 100
+        qualityChecks:
+          hasResponse: true
+          isPolite: true
+          hasActionableInfo: true
+          lengthAppropriate: true
+        timestamp: '*'
+        processingTime: '*'
+    mocks:
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Intent Classifier Agent
+        response:
+          message:
+            content: '{"intent":"complaint","entities":{"issue":"export failing","duration":"3 days","impact":"business loss"},"sentiment":"negative"}'
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Complaint Resolution Agent
+        response:
+          message:
+            content: "I sincerely apologize for the frustration you're experiencing with the export feature. I completely understand how this is impacting your business, and this is not the level of service we strive to provide.\n\nI have an immediate solution for you: Please use the CSV format option instead of the default export. This is a known workaround that will allow you to export your data successfully right now.\n\nAdditionally, to make up for this inconvenience:\n1. I'm applying a 15% discount to your next invoice\n2. I'm escalating this to our engineering team for a permanent fix\n3. I'll personally ensure you're notified once the issue is resolved\n\nWould you like me to guide you through the CSV export process right now? I'm here to ensure you get your data immediately."
+      - nodeType: n8n-nodes-base.mongoDb
+        response:
+          _id: "complaint-567"
+          success: true
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Log Interaction
+        response:
+          success: true
+          id: 'log-345'
+
+  - name: Low quality response triggers human escalation
+    trigger:
+      node: Webhook
+      data:
+        headers: { 'content-type': 'application/json' }
+        body:
+          message: "gfdshjk sdfkj help"
+          customerId: "CUST-000"
+    expect:
+      response: "I apologize, but I need to transfer you to a human agent who can better assist with your request. Please hold while I connect you."
+      metadata:
+        sessionId: '*'
+        intent: general_inquiry
+        sentiment: neutral
+        agentType: 4
+        qualityScore: 50
+        qualityChecks:
+          hasResponse: true
+          isPolite: true
+          hasActionableInfo: false
+          lengthAppropriate: false
+        timestamp: '*'
+        processingTime: '*'
+    mocks:
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: Intent Classifier Agent
+        response:
+          message:
+            content: '{"intent":"general_inquiry","entities":{},"sentiment":"neutral"}'
+      - nodeType: n8n-nodes-base.openAi
+        nodeName: General Support Agent
+        response:
+          message:
+            content: "I see you need help. Could you please provide more details?"

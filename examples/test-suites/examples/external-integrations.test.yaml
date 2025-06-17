@@ -1,0 +1,36 @@
+test: External Integrations Tests
+workflow: ../../workflows/external-integrations.json
+config:
+  timeout: 20000
+  retries: 2
+cases:
+  - name: Should fetch and combine data from multiple sources
+    input:
+      username: octocat
+      email: octocat@github.com
+      startDate: '2024-01-01'
+    expect:
+      success: true
+      data: Mocked external data
+      notifications:
+        slack: true
+        email: true
+        s3Upload: true
+      processedAt: '*'
+  - name: Should handle API failures gracefully
+    input:
+      username: nonexistent
+      email: test@example.com
+      startDate: '2024-01-01'
+    expect:
+      success: false
+  - name: Should handle partial service failures
+    input:
+      username: testuser
+      email: test@example.com
+      startDate: '2024-01-01'
+    expect:
+      notifications:
+        slack: true
+        email: true
+        s3Upload: false

@@ -1,0 +1,92 @@
+{
+  "name": "Test Sub-Workflow Error Handling",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "error-prone-workflow"
+        },
+        "mode": "once"
+      },
+      "name": "Execute Error Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error !== undefined }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Check Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "error_handled"
+            },
+            {
+              "name": "errorMessage",
+              "value": "={{ $json.error.message || 'Unknown error' }}"
+            }
+          ]
+        }
+      },
+      "name": "Handle Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            }
+          ]
+        }
+      },
+      "name": "Handle Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Execute Error Workflow", "type": "main", "index": 0 }]]
+    },
+    "Execute Error Workflow": {
+      "main": [[{ "node": "Check Error", "type": "main", "index": 0 }]]
+    },
+    "Check Error": {
+      "main": [
+        [{ "node": "Handle Error", "type": "main", "index": 0 }],
+        [{ "node": "Handle Success", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

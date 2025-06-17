@@ -1,0 +1,100 @@
+test: Comprehensive Data Processing Tests
+workflow: ../../workflows/comprehensive-data-processing.json
+config:
+  timeout: 15000
+  retries: 1
+cases:
+  - name: Should process high-value items correctly
+    input:
+      items:
+        - name: Product A
+          amount: 150
+          type: electronics
+        - name: Product B
+          amount: 250
+          type: furniture
+        - name: Product C
+          amount: 350
+          type: electronics
+    expect:
+      processedItems: 3
+      summary:
+        batchSize: 3
+        totalAmount: 750
+        averageAmount: 250
+      timestamp: '*'
+  - name: Should handle mixed value items with proper categorization
+    input:
+      items:
+        - name: Item 1
+          amount: 50
+        - name: Item 2
+          amount: 150
+        - name: Item 3
+          amount: 75
+        - name: Item 4
+          amount: 200
+        - name: Item 5
+          amount: 30
+    expect:
+      processedItems: 5
+      summary:
+        batchSize: 5
+        totalAmount: 505
+        averageAmount: 101
+      timestamp: '*'
+  - name: Should handle duplicate items correctly
+    input:
+      items:
+        - id: abc123
+          name: Duplicate Item
+          amount: 120
+        - id: abc123
+          name: Duplicate Item
+          amount: 120
+        - id: xyz789
+          name: Unique Item
+          amount: 80
+    expect:
+      processedItems: 3
+      summary:
+        batchSize: 3
+        totalAmount: 320
+        averageAmount: 106.66666666666667
+      timestamp: '*'
+  - name: Should handle empty input gracefully
+    input:
+      items: []
+    expect:
+      processedItems: 0
+      summary:
+        batchSize: 0
+        totalAmount: 0
+        averageAmount: 0
+      timestamp: '*'
+  - name: Should process items in batches
+    input:
+      items:
+        - name: Item 1
+          amount: 100
+        - name: Item 2
+          amount: 200
+        - name: Item 3
+          amount: 300
+        - name: Item 4
+          amount: 400
+        - name: Item 5
+          amount: 500
+        - name: Item 6
+          amount: 600
+        - name: Item 7
+          amount: 700
+        - name: Item 8
+          amount: 800
+    expect:
+      processedItems: 8
+      summary:
+        batchSize: 8
+        totalAmount: 3600
+        averageAmount: 450
+      timestamp: '*'

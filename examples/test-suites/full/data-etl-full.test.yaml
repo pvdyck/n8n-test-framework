@@ -1,0 +1,8 @@
+test: Data ETL Full Coverage
+workflow: ../../workflows/data-etl-pipeline.json
+cases:
+  - name: Daily report with data
+  - name: Empty data handling  
+  - name: Low stock alert scenario
+  - name: Critical inventory shortage
+  - name: High sales good inventory

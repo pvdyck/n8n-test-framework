@@ -1,0 +1,380 @@
+{
+  "name": "AI Multi-Agent Customer Support System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "customer-support",
+        "responseMode": "responseNode",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "customer-support-webhook"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": {
+          "messageHistory": [
+            {
+              "role": "system",
+              "content": "You are a customer intent classifier. Analyze the customer message and classify it into one of these categories: technical_support, billing_inquiry, product_information, complaint, general_inquiry. Also extract key entities like product names, order numbers, and sentiment."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.body.message }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "responseFormat": {
+            "type": "json_object"
+          }
+        }
+      },
+      "name": "Intent Classifier Agent",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse AI response and route to appropriate agent\nconst aiResponse = JSON.parse(items[0].json.message.content);\nconst intent = aiResponse.intent;\nconst entities = aiResponse.entities || {};\nconst sentiment = aiResponse.sentiment || 'neutral';\n\n// Create routing decision\nconst routing = {\n  intent,\n  entities,\n  sentiment,\n  priority: sentiment === 'negative' ? 'high' : 'normal',\n  originalMessage: $node['Webhook'].json.body.message,\n  customerId: $node['Webhook'].json.body.customerId,\n  sessionId: $node['Webhook'].json.body.sessionId || crypto.randomUUID(),\n  timestamp: new Date().toISOString()\n};\n\n// Add to scratchpad memory\nconst memory = {\n  sessionId: routing.sessionId,\n  interactions: [\n    {\n      timestamp: routing.timestamp,\n      intent: routing.intent,\n      sentiment: routing.sentiment,\n      message: routing.originalMessage\n    }\n  ]\n};\n\nreturn [{ json: { routing, memory } }];"
+      },
+      "name": "Route Decision",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.routing.intent }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "technical_support",
+              "output": 0
+            },
+            {
+              "value2": "billing_inquiry",
+              "output": 1
+            },
+            {
+              "value2": "product_information",
+              "output": 2
+            },
+            {
+              "value2": "complaint",
+              "output": 3
+            }
+          ]
+        },
+        "fallbackOutput": 4
+      },
+      "name": "Route by Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": {
+          "messageHistory": [
+            {
+              "role": "system",
+              "content": "You are a technical support specialist. Use the following knowledge base to help the customer. If you need more information, ask clarifying questions. Always be helpful and professional.\n\nKnowledge Base:\n- Product A: Version 2.5, common issues include login problems (clear cache), sync errors (check network)\n- Product B: Version 1.8, known bug with export feature (workaround: use CSV format)\n- General troubleshooting: restart application, check internet connection, update to latest version"
+            },
+            {
+              "role": "user",
+              "content": "Customer: {{ $json.routing.originalMessage }}\n\nEntities: {{ JSON.stringify($json.routing.entities) }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "name": "Technical Support Agent",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1050, 100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM billing WHERE customer_id = '{{ $json.routing.customerId }}' ORDER BY created_at DESC LIMIT 5"
+      },
+      "name": "Fetch Billing Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "messageHistory": [
+            {
+              "role": "system",
+              "content": "You are a billing specialist. Use the customer's billing history to answer their questions. Be accurate with numbers and dates. If you need to escalate to a human, indicate this clearly."
+            },
+            {
+              "role": "user",
+              "content": "Customer: {{ $json.routing.originalMessage }}\n\nBilling History: {{ JSON.stringify($json.billingData) }}"
+            }
+          ]
+        }
+      },
+      "name": "Billing Agent",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "similarity_search",
+        "collection": "product_catalog",
+        "query": "={{ $json.routing.originalMessage }}",
+        "topK": 5
+      },
+      "name": "Search Products",
+      "type": "n8n-nodes-base.qdrant",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "messageHistory": [
+            {
+              "role": "system",
+              "content": "You are a product information specialist. Use the search results to provide accurate product details, comparisons, and recommendations. Focus on the customer's specific needs."
+            },
+            {
+              "role": "user",
+              "content": "Customer: {{ $json.routing.originalMessage }}\n\nRelevant Products: {{ JSON.stringify($json.searchResults) }}"
+            }
+          ]
+        }
+      },
+      "name": "Product Info Agent",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": {
+          "messageHistory": [
+            {
+              "role": "system",
+              "content": "You are a complaint resolution specialist. Your goal is to acknowledge the customer's frustration, apologize when appropriate, and offer concrete solutions. You can offer: 15% discount, free shipping on next order, or escalation to manager. Be empathetic and solution-focused."
+            },
+            {
+              "role": "user",
+              "content": "Customer ({{ $json.routing.sentiment }} sentiment): {{ $json.routing.originalMessage }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.8
+        }
+      },
+      "name": "Complaint Resolution Agent",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "collection": "complaints",
+        "document": {
+          "customerId": "={{ $json.routing.customerId }}",
+          "complaint": "={{ $json.routing.originalMessage }}",
+          "sentiment": "={{ $json.routing.sentiment }}",
+          "resolution": "={{ $json.message.content }}",
+          "timestamp": "={{ $json.routing.timestamp }}"
+        }
+      },
+      "name": "Log Complaint",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "messageHistory": [
+            {
+              "role": "system",
+              "content": "You are a general customer service agent. Be helpful, friendly, and professional. If the query is complex, offer to connect them with a human agent."
+            },
+            {
+              "role": "user",
+              "content": "{{ $json.routing.originalMessage }}"
+            }
+          ]
+        }
+      },
+      "name": "General Support Agent",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "name": "Merge Responses",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Quality assurance check\nconst response = items[0].json;\nconst agentResponse = response.message?.content || response.resolution || 'No response generated';\n\n// Check for quality issues\nconst qualityChecks = {\n  hasResponse: agentResponse.length > 0,\n  isPolite: !agentResponse.toLowerCase().includes('stupid') && !agentResponse.toLowerCase().includes('idiot'),\n  hasActionableInfo: agentResponse.includes('will') || agentResponse.includes('can') || agentResponse.includes('please'),\n  lengthAppropriate: agentResponse.length > 50 && agentResponse.length < 1000\n};\n\nconst passedChecks = Object.values(qualityChecks).filter(v => v).length;\nconst qualityScore = (passedChecks / Object.keys(qualityChecks).length) * 100;\n\n// Add metadata\nreturn [{\n  json: {\n    response: agentResponse,\n    metadata: {\n      sessionId: $node['Route Decision'].json.routing.sessionId,\n      intent: $node['Route Decision'].json.routing.intent,\n      sentiment: $node['Route Decision'].json.routing.sentiment,\n      agentType: $node['Route by Intent'].runIndex,\n      qualityScore,\n      qualityChecks,\n      timestamp: new Date().toISOString(),\n      processingTime: Date.now() - new Date($node['Route Decision'].json.routing.timestamp).getTime()\n    }\n  }\n}];"
+      },
+      "name": "Quality Assurance",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.metadata.qualityScore }}",
+              "operation": "smaller",
+              "value2": 75
+            }
+          ]
+        }
+      },
+      "name": "Quality Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "table": "support_sessions",
+        "columns": "session_id,customer_id,intent,sentiment,agent_response,quality_score,processing_time"
+      },
+      "name": "Log Interaction",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "I apologize, but I need to transfer you to a human agent who can better assist with your request. Please hold while I connect you."
+            }
+          ]
+        }
+      },
+      "name": "Escalate to Human",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [2050, 400]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Intent Classifier Agent", "type": "main", "index": 0 }]]
+    },
+    "Intent Classifier Agent": {
+      "main": [[{ "node": "Route Decision", "type": "main", "index": 0 }]]
+    },
+    "Route Decision": {
+      "main": [[{ "node": "Route by Intent", "type": "main", "index": 0 }]]
+    },
+    "Route by Intent": {
+      "main": [
+        [{ "node": "Technical Support Agent", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Billing Data", "type": "main", "index": 0 }],
+        [{ "node": "Search Products", "type": "main", "index": 0 }],
+        [{ "node": "Complaint Resolution Agent", "type": "main", "index": 0 }],
+        [{ "node": "General Support Agent", "type": "main", "index": 0 }]
+      ]
+    },
+    "Technical Support Agent": {
+      "main": [[{ "node": "Merge Responses", "type": "main", "index": 0 }]]
+    },
+    "Fetch Billing Data": {
+      "main": [[{ "node": "Billing Agent", "type": "main", "index": 0 }]]
+    },
+    "Billing Agent": {
+      "main": [[{ "node": "Merge Responses", "type": "main", "index": 0 }]]
+    },
+    "Search Products": {
+      "main": [[{ "node": "Product Info Agent", "type": "main", "index": 0 }]]
+    },
+    "Product Info Agent": {
+      "main": [[{ "node": "Merge Responses", "type": "main", "index": 0 }]]
+    },
+    "Complaint Resolution Agent": {
+      "main": [[{ "node": "Log Complaint", "type": "main", "index": 0 }]]
+    },
+    "Log Complaint": {
+      "main": [[{ "node": "Merge Responses", "type": "main", "index": 0 }]]
+    },
+    "General Support Agent": {
+      "main": [[{ "node": "Merge Responses", "type": "main", "index": 0 }]]
+    },
+    "Merge Responses": {
+      "main": [[{ "node": "Quality Assurance", "type": "main", "index": 0 }]]
+    },
+    "Quality Assurance": {
+      "main": [[{ "node": "Quality Check", "type": "main", "index": 0 }]]
+    },
+    "Quality Check": {
+      "main": [
+        [{ "node": "Log Interaction", "type": "main", "index": 0 }],
+        [{ "node": "Escalate to Human", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Interaction": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "Escalate to Human": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  }
+}

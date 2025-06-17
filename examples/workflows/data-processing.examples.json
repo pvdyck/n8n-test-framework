@@ -1,0 +1,31 @@
+[
+  {
+    "scenario": "Process CSV data",
+    "csvData": "name,age\\nJohn,30\\nJane,25\\nBob,35",
+    "expect": {
+      "processed": 3,
+      "transformed": [
+        {"name": "John", "age": 30, "email": "john@example.com"},
+        {"name": "Jane", "age": 25, "email": "jane@example.com"},
+        {"name": "Bob", "age": 35, "email": "bob@example.com"}
+      ]
+    }
+  },
+  {
+    "scenario": "Empty data handling",
+    "items": [],
+    "expect": {
+      "processed": 0,
+      "errors": [],
+      "status": "success"
+    }
+  },
+  {
+    "scenario": "Invalid data",
+    "record": {"name": "Test"},
+    "expect": {
+      "valid": false,
+      "errors": ["Missing required field: email"]
+    }
+  }
+]

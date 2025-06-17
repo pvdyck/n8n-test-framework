@@ -1,0 +1,36 @@
+test: E-commerce Order Processing
+workflow: ../../workflows/ecommerce-order-processing.json
+cases:
+  - name: Process valid order
+    trigger:
+      webhook:
+        customerId: CUST-123
+        customerEmail: john@example.com
+        items:
+          - productId: PROD-001
+            quantity: 2
+            price: 79.99
+        shippingAddress:
+          city: New York
+          zip: '10001'
+        paymentMethod: card_123
+  - name: Reject - insufficient inventory
+    trigger:
+      webhook:
+        customerId: CUST-456
+        items:
+          - productId: PROD-002
+            quantity: 10
+            price: 299.99
+        shippingAddress: {}
+        paymentMethod: card_456
+  - name: Payment failure
+    trigger:
+      webhook:
+        customerId: CUST-789
+        items:
+          - productId: PROD-003
+            quantity: 1
+            price: 249.99
+        shippingAddress: {}
+        paymentMethod: card_declined

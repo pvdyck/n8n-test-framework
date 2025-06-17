@@ -1,0 +1,365 @@
+{
+  "name": "High-Volume Webhook Processor with Rate Limiting",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "events",
+        "responseMode": "responseNode",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "event-processor"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Rate limiting logic\nconst clientId = $json.headers['x-client-id'] || 'anonymous';\nconst timestamp = Date.now();\n\n// Simple in-memory rate limiting (in production, use Redis)\nif (!global.rateLimits) {\n  global.rateLimits = {};\n}\n\nif (!global.rateLimits[clientId]) {\n  global.rateLimits[clientId] = {\n    requests: [],\n    blocked: false,\n    blockUntil: 0\n  };\n}\n\nconst client = global.rateLimits[clientId];\n\n// Check if client is blocked\nif (client.blocked && timestamp < client.blockUntil) {\n  return [{\n    json: {\n      error: 'Rate limit exceeded',\n      retryAfter: Math.ceil((client.blockUntil - timestamp) / 1000),\n      status: 429\n    }\n  }];\n}\n\n// Clean old requests (older than 1 minute)\nclient.requests = client.requests.filter(req => timestamp - req < 60000);\n\n// Add current request\nclient.requests.push(timestamp);\n\n// Check rate limits\nconst requestsPerMinute = client.requests.length;\nconst requestsPerSecond = client.requests.filter(req => timestamp - req < 1000).length;\n\nif (requestsPerSecond > 10) {\n  // Block for 1 minute if exceeding 10 req/sec\n  client.blocked = true;\n  client.blockUntil = timestamp + 60000;\n  return [{\n    json: {\n      error: 'Rate limit exceeded: Too many requests per second',\n      limit: '10 req/sec',\n      retryAfter: 60,\n      status: 429\n    }\n  }];\n}\n\nif (requestsPerMinute > 300) {\n  // Block for 5 minutes if exceeding 300 req/min\n  client.blocked = true;\n  client.blockUntil = timestamp + 300000;\n  return [{\n    json: {\n      error: 'Rate limit exceeded: Too many requests per minute',\n      limit: '300 req/min',\n      retryAfter: 300,\n      status: 429\n    }\n  }];\n}\n\n// Request allowed, add metadata\nreturn [{\n  json: {\n    ...items[0].json,\n    metadata: {\n      clientId,\n      timestamp,\n      requestsPerMinute,\n      requestsPerSecond,\n      remainingPerMinute: 300 - requestsPerMinute,\n      remainingPerSecond: 10 - requestsPerSecond\n    }\n  }\n}];"
+      },
+      "name": "Rate Limiter",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "notEqual",
+              "value2": 429
+            }
+          ]
+        }
+      },
+      "name": "Check Rate Limit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate webhook payload\nconst errors = [];\nconst payload = items[0].json.body || {};\n\n// Required fields validation\nconst requiredFields = ['event_type', 'event_id', 'timestamp', 'data'];\nfor (const field of requiredFields) {\n  if (!payload[field]) {\n    errors.push(`Missing required field: ${field}`);\n  }\n}\n\n// Event type validation\nconst validEventTypes = ['user.created', 'user.updated', 'order.placed', 'order.shipped', 'payment.completed'];\nif (payload.event_type && !validEventTypes.includes(payload.event_type)) {\n  errors.push(`Invalid event type: ${payload.event_type}`);\n}\n\n// Timestamp validation (not older than 5 minutes)\nif (payload.timestamp) {\n  const eventTime = new Date(payload.timestamp).getTime();\n  const now = Date.now();\n  if (now - eventTime > 300000) {\n    errors.push('Event timestamp is too old (> 5 minutes)');\n  }\n}\n\n// Duplicate check (in production, use Redis or database)\nif (!global.processedEvents) {\n  global.processedEvents = new Set();\n}\n\nif (payload.event_id) {\n  if (global.processedEvents.has(payload.event_id)) {\n    errors.push('Duplicate event detected');\n  } else {\n    global.processedEvents.add(payload.event_id);\n    // Clean old events after 1000 entries\n    if (global.processedEvents.size > 1000) {\n      global.processedEvents.clear();\n    }\n  }\n}\n\nif (errors.length > 0) {\n  return [{\n    json: {\n      valid: false,\n      errors,\n      originalPayload: payload\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    eventType: payload.event_type,\n    eventId: payload.event_id,\n    timestamp: payload.timestamp,\n    data: payload.data,\n    metadata: items[0].json.metadata\n  }\n}];"
+      },
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Is Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "topic": "events.{{ $json.eventType }}",
+        "message": "={{ JSON.stringify($json) }}",
+        "options": {
+          "compression": "gzip",
+          "acks": 1,
+          "timeout": 5000
+        }
+      },
+      "name": "Publish to Kafka",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [1250, 100]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.eventType }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "user.created",
+              "output": 0
+            },
+            {
+              "value2": "user.updated",
+              "output": 1
+            },
+            {
+              "value2": "order.placed",
+              "output": 2
+            },
+            {
+              "value2": "order.shipped",
+              "output": 3
+            },
+            {
+              "value2": "payment.completed",
+              "output": 4
+            }
+          ]
+        }
+      },
+      "name": "Route by Event Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "queueName": "user-events",
+        "message": "={{ JSON.stringify($json) }}",
+        "options": {
+          "durable": true,
+          "priority": 5
+        }
+      },
+      "name": "User Event Queue",
+      "type": "n8n-nodes-base.rabbitmq",
+      "typeVersion": 1,
+      "position": [1450, 50]
+    },
+    {
+      "parameters": {
+        "queueName": "order-events",
+        "message": "={{ JSON.stringify($json) }}",
+        "options": {
+          "durable": true,
+          "priority": "={{ $json.data.orderTotal > 1000 ? 10 : 5 }}"
+        }
+      },
+      "name": "Order Event Queue",
+      "type": "n8n-nodes-base.rabbitmq",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "queueName": "payment-events",
+        "message": "={{ JSON.stringify($json) }}",
+        "options": {
+          "durable": true,
+          "priority": 10,
+          "expiration": 3600000
+        }
+      },
+      "name": "Payment Event Queue",
+      "type": "n8n-nodes-base.rabbitmq",
+      "typeVersion": 1,
+      "position": [1450, 350]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "user-processor"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "name": "Process User Events",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1650, 50]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "order-processor"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "name": "Process Order Events",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "payment-processor"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "name": "Process Payment Events",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1650, 350]
+    },
+    {
+      "parameters": {
+        "operation": "index",
+        "index": "webhook-errors",
+        "body": "={{ JSON.stringify({ ...($json), timestamp: new Date().toISOString() }) }}"
+      },
+      "name": "Log Invalid Events",
+      "type": "n8n-nodes-base.elasticsearch",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate response based on processing result\nconst eventType = $node['Validate Payload']?.json?.eventType;\nconst eventId = $node['Validate Payload']?.json?.eventId;\nconst metadata = $node['Rate Limiter']?.json?.metadata;\n\nreturn [{\n  json: {\n    status: 'accepted',\n    eventId,\n    message: `Event ${eventType} queued for processing`,\n    metadata: {\n      processingTime: Date.now() - new Date(metadata.timestamp).getTime(),\n      rateLimits: {\n        requestsPerMinute: metadata.requestsPerMinute,\n        remainingPerMinute: metadata.remainingPerMinute\n      }\n    }\n  }\n}];"
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "number": [
+            {
+              "name": "status",
+              "value": 400
+            }
+          ],
+          "string": [
+            {
+              "name": "error",
+              "value": "Bad Request"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.errors.join(', ') }}"
+            }
+          ]
+        }
+      },
+      "name": "Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "values": {
+          "number": [
+            {
+              "name": "status",
+              "value": "={{ $json.status }}"
+            }
+          ],
+          "string": [
+            {
+              "name": "error",
+              "value": "{{ $json.error }}"
+            }
+          ]
+        },
+        "options": {
+          "dotNotation": false
+        }
+      },
+      "name": "Rate Limit Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Send Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    }
+  ],
+  "connections": {
+    "Event Webhook": {
+      "main": [[{ "node": "Rate Limiter", "type": "main", "index": 0 }]]
+    },
+    "Rate Limiter": {
+      "main": [[{ "node": "Check Rate Limit", "type": "main", "index": 0 }]]
+    },
+    "Check Rate Limit": {
+      "main": [
+        [{ "node": "Validate Payload", "type": "main", "index": 0 }],
+        [{ "node": "Rate Limit Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Payload": {
+      "main": [[{ "node": "Is Valid?", "type": "main", "index": 0 }]]
+    },
+    "Is Valid?": {
+      "main": [
+        [
+          { "node": "Publish to Kafka", "type": "main", "index": 0 },
+          { "node": "Route by Event Type", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Log Invalid Events", "type": "main", "index": 0 },
+          { "node": "Error Response", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Route by Event Type": {
+      "main": [
+        [
+          { "node": "User Event Queue", "type": "main", "index": 0 },
+          { "node": "Process User Events", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "User Event Queue", "type": "main", "index": 0 },
+          { "node": "Process User Events", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Order Event Queue", "type": "main", "index": 0 },
+          { "node": "Process Order Events", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Order Event Queue", "type": "main", "index": 0 },
+          { "node": "Process Order Events", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Payment Event Queue", "type": "main", "index": 0 },
+          { "node": "Process Payment Events", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Publish to Kafka": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+    },
+    "User Event Queue": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+    },
+    "Order Event Queue": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+    },
+    "Payment Event Queue": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+    },
+    "Success Response": {
+      "main": [[{ "node": "Send Response", "type": "main", "index": 0 }]]
+    },
+    "Error Response": {
+      "main": [[{ "node": "Send Response", "type": "main", "index": 0 }]]
+    },
+    "Rate Limit Response": {
+      "main": [[{ "node": "Send Response", "type": "main", "index": 0 }]]
+    }
+  }
+}

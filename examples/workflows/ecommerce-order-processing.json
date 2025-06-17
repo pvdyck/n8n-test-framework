@@ -1,0 +1,221 @@
+{
+  "name": "E-commerce Order Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "orders/new",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "webhook-order",
+      "name": "New Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate order data\nconst order = items[0].json;\nconst errors = [];\n\n// Required fields\nif (!order.customerId) errors.push('Customer ID is required');\nif (!order.items || !Array.isArray(order.items) || order.items.length === 0) {\n  errors.push('Order must contain at least one item');\n}\nif (!order.shippingAddress) errors.push('Shipping address is required');\nif (!order.paymentMethod) errors.push('Payment method is required');\n\n// Validate items\nif (order.items) {\n  order.items.forEach((item, index) => {\n    if (!item.productId) errors.push(`Item ${index + 1}: Product ID is required`);\n    if (!item.quantity || item.quantity < 1) errors.push(`Item ${index + 1}: Invalid quantity`);\n    if (!item.price || item.price <= 0) errors.push(`Item ${index + 1}: Invalid price`);\n  });\n}\n\n// Calculate totals\nconst subtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);\nconst tax = subtotal * 0.08; // 8% tax\nconst shipping = subtotal > 100 ? 0 : 10; // Free shipping over $100\nconst total = subtotal + tax + shipping;\n\nif (errors.length > 0) {\n  throw new Error(errors.join('; '));\n}\n\nreturn [{\n  json: {\n    ...order,\n    orderId: `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,\n    status: 'validated',\n    totals: {\n      subtotal: Math.round(subtotal * 100) / 100,\n      tax: Math.round(tax * 100) / 100,\n      shipping: Math.round(shipping * 100) / 100,\n      total: Math.round(total * 100) / 100\n    },\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "validate-order",
+      "name": "Validate Order",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "findOne",
+        "collection": "inventory",
+        "query": "={{JSON.stringify({productId: $json.items[0].productId})}}",
+        "options": {}
+      },
+      "id": "check-inventory",
+      "name": "Check Inventory",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.availableQuantity}}",
+              "operation": "largerEqual",
+              "value2": "={{$node['Validate Order'].json.items[0].quantity}}"
+            }
+          ]
+        }
+      },
+      "id": "inventory-check",
+      "name": "Inventory Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://payment.gateway.com/charge",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "amount",
+              "value": "={{$node['Validate Order'].json.totals.total}}"
+            },
+            {
+              "name": "currency",
+              "value": "USD"
+            },
+            {
+              "name": "customerId",
+              "value": "={{$node['Validate Order'].json.customerId}}"
+            },
+            {
+              "name": "paymentMethod",
+              "value": "={{$node['Validate Order'].json.paymentMethod}}"
+            }
+          ]
+        }
+      },
+      "id": "process-payment",
+      "name": "Process Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "insert",
+        "table": "orders",
+        "columns": "orderId,customerId,status,total,paymentId,createdAt",
+        "additionalFields": {}
+      },
+      "id": "save-order",
+      "name": "Save Order to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "collection": "inventory",
+        "updateKey": "productId",
+        "options": {},
+        "updateFields": {
+          "availableQuantity": "={{$json.availableQuantity - $node['Validate Order'].json.items[0].quantity}}"
+        }
+      },
+      "id": "update-inventory",
+      "name": "Update Inventory",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "orders@shop.com",
+        "toEmail": "={{$node['Validate Order'].json.customerEmail}}",
+        "subject": "Order Confirmation - {{$node['Validate Order'].json.orderId}}",
+        "text": "Thank you for your order!\n\nOrder ID: {{$node['Validate Order'].json.orderId}}\nTotal: ${{$node['Validate Order'].json.totals.total}}\n\nWe'll send you tracking information once your order ships.",
+        "options": {}
+      },
+      "id": "send-confirmation",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "channel": "#orders",
+        "text": ":shopping_cart: New Order {{$node['Validate Order'].json.orderId}}\nCustomer: {{$node['Validate Order'].json.customerId}}\nTotal: ${{$node['Validate Order'].json.totals.total}}",
+        "otherOptions": {},
+        "attachments": []
+      },
+      "id": "notify-slack",
+      "name": "Notify Team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1650, 350]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format success response\nreturn [{\n  json: {\n    success: true,\n    orderId: $node['Validate Order'].json.orderId,\n    status: 'confirmed',\n    message: 'Order processed successfully',\n    estimatedDelivery: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]\n  }\n}];"
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle out of stock\nreturn [{\n  json: {\n    success: false,\n    error: 'INSUFFICIENT_INVENTORY',\n    message: 'One or more items are out of stock',\n    availableQuantity: items[0].json.availableQuantity,\n    requestedQuantity: $node['Validate Order'].json.items[0].quantity\n  }\n}];"
+      },
+      "id": "out-of-stock",
+      "name": "Out of Stock Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {},
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    }
+  ],
+  "connections": {
+    "New Order Webhook": {
+      "main": [[{ "node": "Validate Order", "type": "main", "index": 0 }]]
+    },
+    "Validate Order": {
+      "main": [[{ "node": "Check Inventory", "type": "main", "index": 0 }]]
+    },
+    "Check Inventory": {
+      "main": [[{ "node": "Inventory Available?", "type": "main", "index": 0 }]]
+    },
+    "Inventory Available?": {
+      "main": [
+        [{ "node": "Process Payment", "type": "main", "index": 0 }],
+        [{ "node": "Out of Stock Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Process Payment": {
+      "main": [[{ "node": "Save Order to DB", "type": "main", "index": 0 }]]
+    },
+    "Save Order to DB": {
+      "main": [[{ "node": "Update Inventory", "type": "main", "index": 0 }]]
+    },
+    "Update Inventory": {
+      "main": [[
+        { "node": "Send Confirmation Email", "type": "main", "index": 0 },
+        { "node": "Notify Team", "type": "main", "index": 0 }
+      ]]
+    },
+    "Send Confirmation Email": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+    },
+    "Notify Team": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+    },
+    "Success Response": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    },
+    "Out of Stock Response": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  }
+}

@@ -1,0 +1,100 @@
+test: Parallel Sub-Workflow Execution Test
+workflow: ../../workflows/test-parallel-sub-workflows.json
+cases:
+  - name: Test parallel execution of multiple sub-workflows
+    input:
+      userId: 12345
+      data:
+        name: John Doe
+        email: john@example.com
+        age: 30
+    expect:
+      processing:
+        status: completed
+        processedData:
+          userId: 12345
+          name: JOHN DOE
+          email: john@example.com
+          ageGroup: adult
+      validation:
+        isValid: true
+        checks:
+          email: valid
+          age: valid
+          required_fields: passed
+      notificationQueued: true
+      timestamp: '2024-01-01T12:00:00.000Z'
+    mocks:
+      - workflowId: data-processing-workflow
+        response:
+          status: completed
+          processedData:
+            userId: 12345
+            name: JOHN DOE
+            email: john@example.com
+            ageGroup: adult
+      - workflowId: validation-workflow
+        response:
+          isValid: true
+          checks:
+            email: valid
+            age: valid
+            required_fields: passed
+      - workflowId: notification-workflow
+        response:
+          queued: true
+          messageId: msg-123456
+          
+  - name: Test with validation failure
+    input:
+      userId: 67890
+      data:
+        name: Jane
+        email: invalid-email
+        age: -5
+    expect:
+      processing:
+        status: completed
+        processedData:
+          userId: 67890
+          name: JANE
+          email: invalid-email
+          ageGroup: invalid
+      validation:
+        isValid: false
+        checks:
+          email: invalid
+          age: invalid_range
+          required_fields: passed
+        errors:
+          - field: email
+            message: Invalid email format
+          - field: age
+            message: Age must be positive
+      notificationQueued: true
+      timestamp: '2024-01-01T12:00:00.000Z'
+    mocks:
+      - workflowId: data-processing-workflow
+        response:
+          status: completed
+          processedData:
+            userId: 67890
+            name: JANE
+            email: invalid-email
+            ageGroup: invalid
+      - workflowId: validation-workflow
+        response:
+          isValid: false
+          checks:
+            email: invalid
+            age: invalid_range
+            required_fields: passed
+          errors:
+            - field: email
+              message: Invalid email format
+            - field: age
+              message: Age must be positive
+      - workflowId: notification-workflow
+        response:
+          queued: true
+          messageId: msg-789012

@@ -1,0 +1,5 @@
+test: Data ETL Pipeline
+workflow: ../../workflows/data-etl-pipeline.json
+cases:
+  - name: Daily report with data
+  - name: Empty data handling

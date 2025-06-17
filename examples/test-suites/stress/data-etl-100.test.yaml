@@ -1,0 +1,307 @@
+test: Data ETL Pipeline - Full Coverage
+description: Comprehensive tests including inventory alert scenarios
+workflow: ../../workflows/data-etl-pipeline.json
+
+cases:
+  - name: Generate daily sales report with normal data
+    description: Test standard ETL pipeline execution with regular sales data
+    mocks:
+      - nodeName: Extract Order Data
+        output:
+          - json:
+              total_orders: "150"
+              total_revenue: "25000.00"
+              avg_order_value: "166.67"
+              unique_customers: "120"
+      - nodeName: Extract Category Sales
+        output:
+          - json:
+              category: "Electronics"
+              orders_count: "45"
+              units_sold: "120"
+              category_revenue: "12000.00"
+          - json:
+              category: "Clothing"
+              orders_count: "60"
+              units_sold: "200"
+              category_revenue: "8000.00"
+          - json:
+              category: "Home & Garden"
+              orders_count: "45"
+              units_sold: "80"
+              category_revenue: "5000.00"
+      - nodeName: Extract Top Products
+        output:
+          - json:
+              product_id: 1
+              product_name: "Smart TV 55 inch"
+              sku: "TV-001"
+              units_sold: "25"
+              revenue: "15000.00"
+              current_stock: "200"
+          - json:
+              product_id: 2
+              product_name: "Wireless Headphones"
+              sku: "HP-002"
+              units_sold: "50"
+              revenue: "5000.00"
+              current_stock: "500"
+      - nodeName: Store in S3
+        output:
+          json:
+            success: true
+            key: "2024-01-14/sales-report-REPORT-2024-01-14-1234567890.json"
+      - nodeName: Log Report Metadata
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Email Report
+        output:
+          json:
+            success: true
+            messageId: "email-123456"
+    expectedOutputs:
+      json:
+        status: "completed"
+        recordsProcessed: "__number"
+
+  - name: Generate report with low inventory products
+    description: Test ETL pipeline with products that need restocking
+    mocks:
+      - nodeName: Extract Order Data
+        output:
+          - json:
+              total_orders: "200"
+              total_revenue: "35000.00"
+              avg_order_value: "175.00"
+              unique_customers: "180"
+      - nodeName: Extract Category Sales
+        output:
+          - json:
+              category: "Electronics"
+              orders_count: "80"
+              units_sold: "250"
+              category_revenue: "20000.00"
+          - json:
+              category: "Toys"
+              orders_count: "120"
+              units_sold: "400"
+              category_revenue: "15000.00"
+      - nodeName: Extract Top Products
+        output:
+          - json:
+              product_id: 10
+              product_name: "Gaming Console"
+              sku: "GAME-001"
+              units_sold: "100"
+              revenue: "30000.00"
+              current_stock: "50"  # Low stock! Less than 7 days supply (100*7=700)
+          - json:
+              product_id: 11
+              product_name: "Popular Board Game"
+              sku: "TOY-002"
+              units_sold: "200"
+              revenue: "4000.00"
+              current_stock: "100"  # Low stock! Less than 7 days supply (200*7=1400)
+          - json:
+              product_id: 12
+              product_name: "Action Figure Set"
+              sku: "TOY-003"
+              units_sold: "150"
+              revenue: "3000.00"
+              current_stock: "80"   # Low stock! Less than 7 days supply (150*7=1050)
+      - nodeName: Store in S3
+        output:
+          json:
+            success: true
+            key: "2024-01-14/sales-report-REPORT-2024-01-14-1234567891.json"
+      - nodeName: Log Report Metadata
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Email Report
+        output:
+          json:
+            success: true
+            messageId: "email-123457"
+      - nodeName: Send Inventory Alert
+        output:
+          json:
+            ok: true
+            ts: "1234567890.123456"
+            channel: "#inventory-alerts"
+            message: "Low stock alert sent"
+    expectedOutputs:
+      json:
+        status: "completed"
+        recordsProcessed: "__number"
+
+  - name: Handle empty data gracefully
+    description: Test ETL pipeline with no sales data
+    mocks:
+      - nodeName: Extract Order Data
+        output:
+          - json:
+              total_orders: "0"
+              total_revenue: "0.00"
+              avg_order_value: "0.00"
+              unique_customers: "0"
+      - nodeName: Extract Category Sales
+        output: []
+      - nodeName: Extract Top Products
+        output: []
+      - nodeName: Store in S3
+        output:
+          json:
+            success: true
+            key: "2024-01-14/sales-report-REPORT-2024-01-14-1234567892.json"
+      - nodeName: Log Report Metadata
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Email Report
+        output:
+          json:
+            success: true
+            messageId: "email-123458"
+    expectedOutputs:
+      json:
+        status: "completed"
+        recordsProcessed: 0
+
+  - name: Critical low stock multiple products
+    description: Test with severe inventory shortage triggering alerts
+    mocks:
+      - nodeName: Extract Order Data
+        output:
+          - json:
+              total_orders: "300"
+              total_revenue: "50000.00"
+              avg_order_value: "166.67"
+              unique_customers: "250"
+      - nodeName: Extract Category Sales
+        output:
+          - json:
+              category: "Electronics"
+              orders_count: "150"
+              units_sold: "300"
+              category_revenue: "35000.00"
+      - nodeName: Extract Top Products
+        output:
+          - json:
+              product_id: 20
+              product_name: "Smartphone X"
+              sku: "PHONE-001"
+              units_sold: "50"
+              revenue: "25000.00"
+              current_stock: "10"   # Critical! Only 1.4 days supply
+          - json:
+              product_id: 21
+              product_name: "Tablet Pro"
+              sku: "TAB-001"
+              units_sold: "30"
+              revenue: "15000.00"
+              current_stock: "5"    # Critical! Only 1.2 days supply
+          - json:
+              product_id: 22
+              product_name: "Smart Watch"
+              sku: "WATCH-001"
+              units_sold: "40"
+              revenue: "8000.00"
+              current_stock: "15"   # Critical! Only 2.6 days supply
+          - json:
+              product_id: 23
+              product_name: "Wireless Charger"
+              sku: "CHRG-001"
+              units_sold: "60"
+              revenue: "3000.00"
+              current_stock: "20"   # Critical! Only 2.3 days supply
+          - json:
+              product_id: 24
+              product_name: "Phone Case"
+              sku: "CASE-001"
+              units_sold: "100"
+              revenue: "2000.00"
+              current_stock: "2000" # OK - 140 days supply
+      - nodeName: Store in S3
+        output:
+          json:
+            success: true
+            key: "2024-01-14/sales-report-REPORT-2024-01-14-1234567893.json"
+      - nodeName: Log Report Metadata
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Email Report
+        output:
+          json:
+            success: true
+            messageId: "email-123459"
+      - nodeName: Send Inventory Alert
+        output:
+          json:
+            ok: true
+            ts: "1234567891.123456"
+            channel: "#inventory-alerts"
+            message: "Critical inventory alert sent"
+    expectedOutputs:
+      json:
+        status: "completed"
+        recordsProcessed: "__number"
+
+  - name: High sales volume no inventory issues
+    description: Test with high sales but adequate inventory
+    mocks:
+      - nodeName: Extract Order Data
+        output:
+          - json:
+              total_orders: "500"
+              total_revenue: "100000.00"
+              avg_order_value: "200.00"
+              unique_customers: "400"
+      - nodeName: Extract Category Sales
+        output:
+          - json:
+              category: "Electronics"
+              orders_count: "500"
+              units_sold: "1000"
+              category_revenue: "100000.00"
+      - nodeName: Extract Top Products
+        output:
+          - json:
+              product_id: 30
+              product_name: "Premium Laptop"
+              sku: "LAPTOP-001"
+              units_sold: "100"
+              revenue: "80000.00"
+              current_stock: "1000"  # Good stock - 70 days supply
+          - json:
+              product_id: 31
+              product_name: "Monitor 4K"
+              sku: "MON-001"
+              units_sold: "50"
+              revenue: "20000.00"
+              current_stock: "500"   # Good stock - 70 days supply
+      - nodeName: Store in S3
+        output:
+          json:
+            success: true
+            key: "2024-01-14/sales-report-REPORT-2024-01-14-1234567894.json"
+      - nodeName: Log Report Metadata
+        output:
+          json:
+            success: true
+            rowCount: 1
+      - nodeName: Email Report
+        output:
+          json:
+            success: true
+            messageId: "email-123460"
+    expectedOutputs:
+      json:
+        status: "completed"
+        recordsProcessed: "__number"

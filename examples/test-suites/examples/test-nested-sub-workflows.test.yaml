@@ -1,0 +1,36 @@
+test: Nested Sub-Workflow Test
+workflow: ../../workflows/test-nested-sub-workflows.json
+cases:
+  - name: Test nested sub-workflow execution with aggregation
+    input:
+      - item: A
+        value: 10
+      - item: B
+        value: 20
+      - item: C
+        value: 30
+    expect:
+      total: 180  # (10+20+30) * 3 levels
+      count: 9    # 3 items * 3 levels
+      items:
+        - item: A
+          level1: processed
+          level2: validated
+          level3: completed
+        - item: B
+          level1: processed
+          level2: validated
+          level3: completed
+        - item: C
+          level1: processed
+          level2: validated
+          level3: completed
+    mocks:
+      - workflowId: workflow-level-1
+        response:
+          item: "{{ $json.item }}"
+          level1: processed
+          level2: validated
+          level3: completed
+          total: "{{ $json.value * 3 }}"
+          count: 3

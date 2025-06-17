@@ -1,0 +1,131 @@
+{
+  "name": "Test Data Transform Nodes",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "transformed",
+              "value": "={{ $json.value.toUpperCase() }}"
+            }
+          ]
+        }
+      },
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "functionCode": "const items = $input.all();\nreturn items.map(item => ({\n  json: {\n    calculated: item.json.a + item.json.b,\n    original: item.json\n  }\n}));"
+      },
+      "name": "Function",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.score }}",
+              "operation": "larger",
+              "value2": 50
+            }
+          ]
+        }
+      },
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.type }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "email",
+              "output": 0
+            },
+            {
+              "value2": "sms",
+              "output": 1
+            }
+          ]
+        },
+        "fallbackOutput": 2
+      },
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: {\n  set: items[0].json,\n  function: items[1].json,\n  if: items[2].json,\n  switch: items[3].json,\n  merge: items[4].json\n}}];"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "Set", "type": "main", "index": 0 },
+          { "node": "Function", "type": "main", "index": 0 },
+          { "node": "IF", "type": "main", "index": 0 },
+          { "node": "Switch", "type": "main", "index": 0 },
+          { "node": "Merge", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 0 }]]
+    },
+    "Function": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 1 }]]
+    },
+    "IF": {
+      "main": [
+        [{ "node": "Combine Results", "type": "main", "index": 2 }],
+        []
+      ]
+    },
+    "Switch": {
+      "main": [
+        [{ "node": "Combine Results", "type": "main", "index": 3 }],
+        [],
+        []
+      ]
+    },
+    "Merge": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 4 }]]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+test: File Storage Node Types Test
+workflow: ../../workflows/test-file-storage-nodes.json
+cases:
+  - name: Test all file storage node types
+    input:
+      filename: test-document.pdf
+      content: Binary content here
+    expect:
+      s3:
+        Bucket: test-bucket
+        Key: test-document.pdf
+        ETag: '"1234567890abcdef"'
+        Location: 'https://test-bucket.s3.amazonaws.com/test-document.pdf'
+      googleDrive:
+        id: '1234567890abcdefghij'
+        name: test-document.pdf
+        mimeType: application/pdf
+        webViewLink: 'https://drive.google.com/file/d/1234567890abcdefghij/view'
+      ftp:
+        success: true
+        path: /uploads/test-document.pdf
+        size: 1024
+      localFile:
+        success: true
+        path: /tmp/test-document.pdf
+      dropbox:
+        id: 'id:AAAAAAAAAAAAAAAAAAA'
+        name: test-document.pdf
+        path_display: /test-document.pdf
+        size: 1024

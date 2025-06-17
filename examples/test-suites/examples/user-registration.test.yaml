@@ -1,0 +1,50 @@
+test: User Registration Workflow Tests
+workflow: ../../workflows/user-registration.json
+config:
+  timeout: 10000
+  retries: 1
+cases:
+  - name: Should successfully register a new user
+    input:
+      email: john.doe@example.com
+      name: John Doe
+    expect:
+      userId: user-12345
+      email: john.doe@example.com
+      name: John Doe
+      emailSent: true
+      onboardingStatus: completed
+      timestamp: "*"
+
+  - name: Should reject invalid email format
+    input:
+      email: invalid-email
+      name: Test User
+    expect:
+      error: Invalid email format
+
+  - name: Should handle API errors gracefully  
+    input:
+      email: existing@example.com
+      name: Existing User
+    expect:
+      error: USER_EXISTS
+      message: A user with this email already exists
+
+  - name: Should handle email service failures
+    input:
+      email: test@example.com
+      name: Test User
+    expect:
+      error: SMTP_CONNECTION_FAILED
+
+  - name: Should process users with special characters in name
+    input:
+      email: user@example.com
+      name: José María O'Connor
+    expect:
+      userId: user-special-123
+      email: user@example.com
+      name: José María O'Connor
+      emailSent: true
+      onboardingStatus: completed

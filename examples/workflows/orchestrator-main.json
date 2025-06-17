@@ -1,0 +1,273 @@
+{
+  "name": "Multi-Workflow Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-order",
+        "responseMode": "responseNode"
+      },
+      "name": "Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "order-processor"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse and validate order\nconst order = items[0].json.body;\n\n// Add processing metadata\nconst processedOrder = {\n  ...order,\n  orderId: order.orderId || `ORD-${Date.now()}`,\n  receivedAt: new Date().toISOString(),\n  status: 'processing',\n  workflowChain: ['main']\n};\n\nreturn [{ json: processedOrder }];"
+      },
+      "name": "Process Order Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "customer-validator"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customerId": "={{ $json.customerId }}",
+            "email": "={{ $json.customerEmail }}",
+            "orderValue": "={{ $json.totalAmount }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Validate Customer",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "inventory-checker"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "items": "={{ JSON.stringify($json.items) }}",
+            "warehouse": "={{ $json.warehouse || 'main' }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Check Inventory",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "payment-processor"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "paymentMethod": "={{ $json.paymentMethod }}",
+            "amount": "={{ $json.totalAmount }}",
+            "currency": "={{ $json.currency || 'USD' }}",
+            "customerId": "={{ $json.customerId }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Process Payment",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Analyze all sub-workflow results\nconst customerResult = items[0].json;\nconst inventoryResult = items[1].json;\nconst paymentResult = items[2].json;\n\nconst allValid = customerResult.valid && inventoryResult.available && paymentResult.success;\n\nif (allValid) {\n  return [{\n    json: {\n      success: true,\n      orderId: $node['Process Order Data'].json.orderId,\n      nextSteps: ['fulfill-order', 'send-confirmation', 'update-inventory'],\n      results: {\n        customer: customerResult,\n        inventory: inventoryResult,\n        payment: paymentResult\n      }\n    }\n  }];\n} else {\n  return [{\n    json: {\n      success: false,\n      orderId: $node['Process Order Data'].json.orderId,\n      errors: {\n        customer: customerResult.valid ? null : customerResult.error,\n        inventory: inventoryResult.available ? null : inventoryResult.error,\n        payment: paymentResult.success ? null : paymentResult.error\n      },\n      nextSteps: ['reject-order', 'refund-payment', 'notify-customer']\n    }\n  }];\n}"
+      },
+      "name": "Analyze Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Order Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "order-fulfillment"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "orderId": "={{ $json.orderId }}",
+            "customerData": "={{ JSON.stringify($json.results.customer) }}",
+            "inventoryData": "={{ JSON.stringify($json.results.inventory) }}",
+            "paymentConfirmation": "={{ $json.results.payment.transactionId }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Fulfill Order",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "notification-sender"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customerId": "={{ $json.results.customer.customerId }}",
+            "email": "={{ $json.results.customer.email }}",
+            "type": "order_confirmation",
+            "orderId": "={{ $json.orderId }}",
+            "trackingNumber": "={{ $json.results.inventory.trackingNumber }}"
+          }
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "name": "Send Confirmation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "order-rejection"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "orderId": "={{ $json.orderId }}",
+            "errors": "={{ JSON.stringify($json.errors) }}",
+            "customerEmail": "={{ $node['Process Order Data'].json.customerEmail }}"
+          }
+        },
+        "mode": "once"
+      },
+      "name": "Reject Order",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate final response\nconst fulfillmentResult = items[0]?.json;\nconst confirmationResult = items[1]?.json;\n\nreturn [{\n  json: {\n    status: 'completed',\n    orderId: $node['Analyze Results'].json.orderId,\n    message: 'Order processed successfully',\n    fulfillment: fulfillmentResult,\n    confirmation: confirmationResult,\n    totalWorkflowsExecuted: 5, // customer-validator, inventory-checker, payment-processor, order-fulfillment, notification-sender\n    processingTime: Date.now() - new Date($node['Process Order Data'].json.receivedAt).getTime()\n  }\n}];"
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 250]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate rejection response\nconst rejectionResult = items[0].json;\n\nreturn [{\n  json: {\n    status: 'rejected',\n    orderId: $node['Analyze Results'].json.orderId,\n    message: 'Order could not be processed',\n    errors: $node['Analyze Results'].json.errors,\n    rejection: rejectionResult,\n    totalWorkflowsExecuted: 4, // customer-validator, inventory-checker, payment-processor, order-rejection\n    processingTime: Date.now() - new Date($node['Process Order Data'].json.receivedAt).getTime()\n  }\n}];"
+      },
+      "name": "Rejection Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Send Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 325]
+    }
+  ],
+  "connections": {
+    "Order Webhook": {
+      "main": [[{ "node": "Process Order Data", "type": "main", "index": 0 }]]
+    },
+    "Process Order Data": {
+      "main": [
+        [
+          { "node": "Validate Customer", "type": "main", "index": 0 },
+          { "node": "Check Inventory", "type": "main", "index": 0 },
+          { "node": "Process Payment", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Validate Customer": {
+      "main": [[{ "node": "Merge Results", "type": "main", "index": 0 }]]
+    },
+    "Check Inventory": {
+      "main": [[{ "node": "Merge Results", "type": "main", "index": 1 }]]
+    },
+    "Process Payment": {
+      "main": [[{ "node": "Merge Results", "type": "main", "index": 2 }]]
+    },
+    "Merge Results": {
+      "main": [[{ "node": "Analyze Results", "type": "main", "index": 0 }]]
+    },
+    "Analyze Results": {
+      "main": [[{ "node": "Order Valid?", "type": "main", "index": 0 }]]
+    },
+    "Order Valid?": {
+      "main": [
+        [
+          { "node": "Fulfill Order", "type": "main", "index": 0 },
+          { "node": "Send Confirmation", "type": "main", "index": 0 }
+        ],
+        [{ "node": "Reject Order", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fulfill Order": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+    },
+    "Send Confirmation": {
+      "main": [[{ "node": "Success Response", "type": "main", "index": 1 }]]
+    },
+    "Reject Order": {
+      "main": [[{ "node": "Rejection Response", "type": "main", "index": 0 }]]
+    },
+    "Success Response": {
+      "main": [[{ "node": "Send Response", "type": "main", "index": 0 }]]
+    },
+    "Rejection Response": {
+      "main": [[{ "node": "Send Response", "type": "main", "index": 0 }]]
+    }
+  }
+}

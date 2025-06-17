@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+
+// Set mock n8n path
+const path = require('path');
+process.env.N8N_PATH = path.join(__dirname, 'bin', 'mock-n8n.ts');
+
+// Direct TypeScript runner for n8n-test-framework
+require('ts-node/register');
+require('./src/cli');

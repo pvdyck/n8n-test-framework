@@ -1,0 +1,329 @@
+{
+  "name": "Comprehensive Data Processing Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "start-node"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Initial data transformation\nconst items = $input.all();\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    processedAt: new Date().toISOString(),\n    id: Math.random().toString(36).substr(2, 9)\n  }\n}));"
+      },
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "id": "transform-data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"amount\"]}}",
+              "operation": "larger",
+              "value2": 100
+            }
+          ]
+        }
+      },
+      "name": "IF Amount > 100",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "id": "if-amount"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "category",
+              "value": "high-value"
+            }
+          ],
+          "number": [
+            {
+              "name": "discount",
+              "value": 10
+            }
+          ]
+        }
+      },
+      "name": "Set High Value",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "id": "set-high-value"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "category",
+              "value": "regular"
+            }
+          ],
+          "number": [
+            {
+              "name": "discount",
+              "value": 0
+            }
+          ]
+        }
+      },
+      "name": "Set Regular",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [850, 400],
+      "id": "set-regular"
+    },
+    {
+      "parameters": {},
+      "name": "Merge Categories",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "id": "merge-categories"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "id,category",
+        "options": {}
+      },
+      "name": "Split Items",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "id": "split-items"
+    },
+    {
+      "parameters": {
+        "operation": "sort",
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "amount",
+              "order": "descending"
+            }
+          ]
+        }
+      },
+      "name": "Sort by Amount",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "id": "sort-items"
+    },
+    {
+      "parameters": {
+        "operation": "removeDuplicates",
+        "compareFields": "id",
+        "options": {}
+      },
+      "name": "Remove Duplicates",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "id": "remove-duplicates"
+    },
+    {
+      "parameters": {
+        "batchSize": 5
+      },
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [1850, 300],
+      "id": "split-batches"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate batch data\nconst items = $input.all();\nconst total = items.reduce((sum, item) => sum + (item.json.amount || 0), 0);\nconst average = total / items.length;\n\nreturn [{\n  json: {\n    batchSize: items.length,\n    totalAmount: total,\n    averageAmount: average,\n    items: items.map(i => i.json)\n  }\n}];"
+      },
+      "name": "Aggregate Batch",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2050, 300],
+      "id": "aggregate-batch"
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{$json[\"category\"]}}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "high-value",
+              "output": 0
+            },
+            {
+              "value2": "regular",
+              "output": 1
+            }
+          ]
+        },
+        "fallbackOutput": 2
+      },
+      "name": "Switch Category",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [2250, 300],
+      "id": "switch-category"
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/process",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "data",
+              "value": "={{JSON.stringify($json)}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send to API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2450, 200],
+      "id": "send-api"
+    },
+    {
+      "parameters": {
+        "operation": "calculateDate",
+        "dateValue": "={{$json[\"processedAt\"]}}",
+        "duration": 7,
+        "timeUnit": "days",
+        "options": {
+          "toFormat": "yyyy-MM-dd"
+        }
+      },
+      "name": "Calculate Expiry",
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 1,
+      "position": [2450, 400],
+      "id": "calculate-expiry"
+    },
+    {
+      "parameters": {
+        "mode": "jsonToBinary",
+        "convertAllData": false,
+        "sourceKey": "data",
+        "destinationKey": "dataFile",
+        "options": {
+          "fileName": "processed-data.json",
+          "mimeType": "application/json"
+        }
+      },
+      "name": "Convert to File",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "typeVersion": 1,
+      "position": [2650, 300],
+      "id": "convert-file"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "algorithm": "MD5",
+        "value": "={{JSON.stringify($json)}}"
+      },
+      "name": "Generate Hash",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [2850, 300],
+      "id": "generate-hash"
+    },
+    {
+      "parameters": {
+        "content": "## Processing Complete\n\n- Total items: {{$json[\"batchSize\"]}}\n- Average amount: {{$json[\"averageAmount\"]}}\n- Hash: {{$json[\"hash\"]}}\n\nProcessed at: {{$json[\"processedAt\"]}}"
+      },
+      "name": "Format Markdown",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [3050, 300],
+      "id": "format-markdown"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Final output formatting\nconst items = $input.all();\nreturn [{\n  json: {\n    success: true,\n    processedItems: items.length,\n    summary: items[0]?.json,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Format Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [3250, 300],
+      "id": "format-output"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{"node": "Transform Data", "type": "main", "index": 0}]]
+    },
+    "Transform Data": {
+      "main": [[{"node": "IF Amount > 100", "type": "main", "index": 0}]]
+    },
+    "IF Amount > 100": {
+      "main": [
+        [{"node": "Set High Value", "type": "main", "index": 0}],
+        [{"node": "Set Regular", "type": "main", "index": 0}]
+      ]
+    },
+    "Set High Value": {
+      "main": [[{"node": "Merge Categories", "type": "main", "index": 0}]]
+    },
+    "Set Regular": {
+      "main": [[{"node": "Merge Categories", "type": "main", "index": 1}]]
+    },
+    "Merge Categories": {
+      "main": [[{"node": "Split Items", "type": "main", "index": 0}]]
+    },
+    "Split Items": {
+      "main": [[{"node": "Sort by Amount", "type": "main", "index": 0}]]
+    },
+    "Sort by Amount": {
+      "main": [[{"node": "Remove Duplicates", "type": "main", "index": 0}]]
+    },
+    "Remove Duplicates": {
+      "main": [[{"node": "Split In Batches", "type": "main", "index": 0}]]
+    },
+    "Split In Batches": {
+      "main": [[{"node": "Aggregate Batch", "type": "main", "index": 0}]]
+    },
+    "Aggregate Batch": {
+      "main": [[{"node": "Switch Category", "type": "main", "index": 0}]]
+    },
+    "Switch Category": {
+      "main": [
+        [{"node": "Send to API", "type": "main", "index": 0}],
+        [{"node": "Calculate Expiry", "type": "main", "index": 0}],
+        [{"node": "Convert to File", "type": "main", "index": 0}]
+      ]
+    },
+    "Send to API": {
+      "main": [[{"node": "Generate Hash", "type": "main", "index": 0}]]
+    },
+    "Calculate Expiry": {
+      "main": [[{"node": "Generate Hash", "type": "main", "index": 0}]]
+    },
+    "Convert to File": {
+      "main": [[{"node": "Generate Hash", "type": "main", "index": 0}]]
+    },
+    "Generate Hash": {
+      "main": [[{"node": "Format Markdown", "type": "main", "index": 0}]]
+    },
+    "Format Markdown": {
+      "main": [[{"node": "Format Output", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

@@ -1,0 +1,233 @@
+test: Enterprise ETL Pipeline with Error Recovery
+workflow: ../../workflows/enterprise-etl-pipeline.json
+cases:
+  - name: Successful ETL run with valid data
+    trigger:
+      node: Hourly Trigger
+      data: { triggered_at: '2024-01-15T14:00:00.000Z' }
+    expect:
+      pipelineId: '*'
+      executionId: '*'
+      runDate: '2024-01-15T14:00:00.000Z'
+      summary:
+        totalRecordsProcessed: 3
+        successfulRecords: 3
+        failedRecords: 0
+        successRate: '100.00%'
+      performance:
+        startTime: '*'
+        endTime: '*'
+        durationMs: '*'
+      nextScheduledRun: '2024-01-15T15:00:00.000Z'
+    mocks:
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Orders
+        response:
+          - order_id: ORD-001
+            customer_id: CUST-123
+            product_id: PROD-456
+            order_quantity: 5
+            unit_price: 29.99
+            status: pending
+          - order_id: ORD-002
+            customer_id: CUST-124
+            product_id: PROD-457
+            order_quantity: 2
+            unit_price: 49.99
+            status: pending
+          - order_id: ORD-003
+            customer_id: CUST-125
+            product_id: PROD-458
+            order_quantity: 10
+            unit_price: 9.99
+            status: pending
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Inventory
+        response:
+          - product_id: PROD-456
+            quantity: 100
+            last_updated: '2024-01-15T13:30:00.000Z'
+          - product_id: PROD-457
+            quantity: 50
+            last_updated: '2024-01-15T13:30:00.000Z'
+          - product_id: PROD-458
+            quantity: 200
+            last_updated: '2024-01-15T13:30:00.000Z'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Customers
+        response:
+          - id: CUST-123
+            customer_name: John Doe
+            email: john@example.com
+          - id: CUST-124
+            customer_name: Jane Smith
+            email: jane@example.com
+          - id: CUST-125
+            customer_name: Bob Johnson
+            email: bob@example.com
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Load to DW
+        response:
+          success: true
+          rowsInserted: 3
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Update Inventory
+        response:
+          success: true
+          rowsUpdated: 3
+      - nodeType: n8n-nodes-base.airtable
+        response:
+          id: rec123456
+          createdTime: '2024-01-15T14:00:30.000Z'
+
+  - name: ETL run with validation errors and recovery
+    trigger:
+      node: Hourly Trigger
+      data: { triggered_at: '2024-01-15T15:00:00.000Z' }
+    expect:
+      pipelineId: '*'
+      executionId: '*'
+      runDate: '2024-01-15T15:00:00.000Z'
+      summary:
+        totalRecordsProcessed: 5
+        successfulRecords: 2
+        failedRecords: 3
+        successRate: '40.00%'
+      performance:
+        startTime: '*'
+        endTime: '*'
+        durationMs: '*'
+      nextScheduledRun: '2024-01-15T16:00:00.000Z'
+    mocks:
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Orders
+        response:
+          - order_id: ORD-004
+            customer_id: CUST-126
+            product_id: PROD-459
+            order_quantity: 3
+            unit_price: 39.99
+            status: pending
+          - order_id: ORD-005
+            customer_id: null  # Missing required field
+            product_id: PROD-460
+            order_quantity: 1
+            unit_price: 99.99
+            status: pending
+          - order_id: ORD-006
+            customer_id: CUST-128
+            product_id: PROD-461
+            order_quantity: 150  # Exceeds inventory
+            unit_price: 19.99
+            status: pending
+          - order_id: null  # Missing order ID
+            customer_id: CUST-129
+            product_id: PROD-462
+            order_quantity: 5
+            unit_price: 29.99
+            status: pending
+          - order_id: ORD-008
+            customer_id: CUST-130
+            product_id: PROD-463
+            order_quantity: 2
+            unit_price: 59.99
+            status: pending
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Inventory
+        response:
+          - product_id: PROD-459
+            quantity: 50
+            last_updated: '2024-01-15T14:30:00.000Z'
+          - product_id: PROD-460
+            quantity: 10
+            last_updated: '2024-01-15T14:30:00.000Z'
+          - product_id: PROD-461
+            quantity: 100  # Less than requested 150
+            last_updated: '2024-01-15T14:30:00.000Z'
+          - product_id: PROD-462
+            quantity: 200
+            last_updated: '2024-01-15T14:30:00.000Z'
+          - product_id: PROD-463
+            quantity: 30
+            last_updated: '2024-01-15T14:30:00.000Z'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Customers
+        response:
+          - id: CUST-126
+            customer_name: Alice Brown
+            email: alice@example.com
+          - id: CUST-128
+            customer_name: Charlie Davis
+            email: charlie@example.com
+          - id: CUST-129
+            customer_name: Diana Evans
+            email: diana@example.com
+          - id: CUST-130
+            customer_name: Edward Fox
+            email: edward@example.com
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Load to DW
+        response:
+          success: true
+          rowsInserted: 2
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Update Inventory
+        response:
+          success: true
+          rowsUpdated: 2
+      - nodeType: n8n-nodes-base.elasticsearch
+        response:
+          _index: etl_errors
+          _id: '*'
+          result: created
+      - nodeType: n8n-nodes-base.slack
+        response:
+          ok: true
+          channel: '#data-alerts'
+          ts: '1234567890.123456'
+      - nodeType: n8n-nodes-base.airtable
+        response:
+          id: rec789012
+          createdTime: '2024-01-15T15:00:45.000Z'
+
+  - name: Complete ETL failure with database connection error
+    trigger:
+      node: Hourly Trigger
+      data: { triggered_at: '2024-01-15T16:00:00.000Z' }
+    expect:
+      pipelineId: '*'
+      executionId: '*'
+      runDate: '2024-01-15T16:00:00.000Z'
+      summary:
+        totalRecordsProcessed: 0
+        successfulRecords: 0
+        failedRecords: 0
+        successRate: '0%'
+      performance:
+        startTime: '*'
+        endTime: '*'
+        durationMs: '*'
+      nextScheduledRun: '2024-01-15T17:00:00.000Z'
+    mocks:
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Orders
+        response:
+          error:
+            message: 'Connection timeout: Unable to connect to database'
+            code: 'ETIMEDOUT'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Inventory
+        response:
+          error:
+            message: 'Connection timeout: Unable to connect to database'
+            code: 'ETIMEDOUT'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Extract Customers
+        response:
+          error:
+            message: 'Connection timeout: Unable to connect to database'
+            code: 'ETIMEDOUT'
+      - nodeType: n8n-nodes-base.airtable
+        response:
+          id: rec345678
+          createdTime: '2024-01-15T16:00:15.000Z'

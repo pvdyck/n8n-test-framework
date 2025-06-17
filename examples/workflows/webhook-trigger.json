@@ -1,0 +1,73 @@
+{
+  "name": "Webhook Trigger Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-registration",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate incoming data\nconst { email, name } = items[0].json;\n\nif (!email || !email.includes('@')) {\n  throw new Error('Invalid email address');\n}\n\nif (!name || name.length < 2) {\n  throw new Error('Name too short');\n}\n\nreturn [{\n  json: {\n    ...items[0].json,\n    validated: true,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "validate-data",
+      "name": "Validate Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://api.example.com/users",
+        "options": {},
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "email",
+              "value": "={{$json.email}}"
+            },
+            {
+              "name": "name",
+              "value": "={{$json.name}}"
+            }
+          ]
+        }
+      },
+      "id": "create-user",
+      "name": "Create User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format response\nreturn [{\n  json: {\n    success: true,\n    userId: items[0].json.id,\n    message: 'User created successfully'\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validate Data", "type": "main", "index": 0 }]]
+    },
+    "Validate Data": {
+      "main": [[{ "node": "Create User", "type": "main", "index": 0 }]]
+    },
+    "Create User": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    }
+  }
+}

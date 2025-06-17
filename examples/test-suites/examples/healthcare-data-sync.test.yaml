@@ -1,0 +1,386 @@
+test: HIPAA-Compliant Healthcare Data Synchronization
+workflow: ../../workflows/healthcare-data-sync.json
+cases:
+  - name: Successful patient data sync with full compliance
+    trigger:
+      node: Schedule Sync
+      data: { triggered_at: '2024-01-15T10:00:00.000Z' }
+    expect:
+      syncId: '*'
+      timestamp: '2024-01-15T10:00:00.000Z'
+      summary:
+        totalProcessed: 3
+        successful: 3
+        errors: 0
+        quarantined: 0
+        duration: '*'
+      compliance:
+        encryption: true
+        authentication: true
+        authorization: true
+        dataMinimization: true
+        piiAccessLogged: true
+        encryptionUsed: true
+        auditTrailComplete: true
+      dataAccess:
+        patientsAccessed: 3
+        fieldsAccessed: [name, address, telecom, ssn]
+        purpose: TREATMENT
+        retention: 7 years
+      nextSync: '2024-01-15T10:15:00.000Z'
+    mocks:
+      - nodeType: n8n-nodes-base.httpRequest
+        nodeName: Fetch EHR Updates
+        response:
+          resourceType: Bundle
+          type: searchset
+          total: 3
+          entry:
+            - resource:
+                resourceType: Patient
+                id: PAT001
+                meta:
+                  lastUpdated: '2024-01-15T09:55:00Z'
+                identifier:
+                  - system: MRN
+                    value: MRN001
+                  - system: SSN
+                    value: '123-45-6789'
+                name:
+                  - family: Doe
+                    given: [John]
+                gender: male
+                birthDate: '1980-01-01'
+                address:
+                  - line: [123 Main St]
+                    city: Boston
+                    state: MA
+                    postalCode: '02101'
+                telecom:
+                  - system: phone
+                    value: 555-0123
+            - resource:
+                resourceType: Patient
+                id: PAT002
+                meta:
+                  lastUpdated: '2024-01-15T09:50:00Z'
+                identifier:
+                  - system: MRN
+                    value: MRN002
+                name:
+                  - family: Smith
+                    given: [Jane]
+                gender: female
+                birthDate: '1975-06-15'
+                address:
+                  - line: [456 Oak Ave]
+                    city: Cambridge
+                    state: MA
+                    postalCode: '02139'
+            - resource:
+                resourceType: Patient
+                id: PAT003
+                meta:
+                  lastUpdated: '2024-01-15T09:45:00Z'
+                identifier:
+                  - system: MRN
+                    value: MRN003
+                name:
+                  - family: Johnson
+                    given: [Robert]
+                gender: male
+                birthDate: '1990-12-20'
+                address:
+                  - line: [789 Elm St]
+                    city: Somerville
+                    state: MA
+                    postalCode: '02144'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Get Pending Syncs
+        response:
+          - patient_id: PAT001
+            last_sync_timestamp: '2024-01-15T08:00:00Z'
+          - patient_id: PAT002
+            last_sync_timestamp: '2024-01-15T08:00:00Z'
+          - patient_id: PAT003
+            last_sync_timestamp: '2024-01-15T08:00:00Z'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Sync to Analytics DB
+        response:
+          rowsAffected: 3
+          success: true
+      - nodeType: n8n-nodes-base.mongoDb
+        nodeName: Sync to NoSQL
+        response:
+          acknowledged: true
+          modifiedCount: 3
+      - nodeType: n8n-nodes-base.elasticsearch
+        nodeName: Update Search Index
+        response:
+          _index: patient-search
+          result: updated
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Update Sync Status
+        response:
+          rowsAffected: 3
+          success: true
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Store Audit Log
+        response:
+          id: audit-123
+          success: true
+      - nodeType: n8n-nodes-base.emailSend
+        response:
+          messageId: msg-456
+          accepted: [compliance-team@hospital.com]
+
+  - name: Sync with validation failures and quarantine
+    trigger:
+      node: Schedule Sync
+      data: { triggered_at: '2024-01-15T10:15:00.000Z' }
+    expect:
+      syncId: '*'
+      timestamp: '2024-01-15T10:15:00.000Z'
+      summary:
+        totalProcessed: 5
+        successful: 2
+        errors: 1
+        quarantined: 2
+        duration: '*'
+      compliance:
+        encryption: true
+        authentication: true
+        authorization: true
+        dataMinimization: true
+        piiAccessLogged: true
+        encryptionUsed: true
+        auditTrailComplete: true
+      dataAccess:
+        patientsAccessed: 5
+        fieldsAccessed: [name, address, telecom, ssn]
+        purpose: TREATMENT
+        retention: 7 years
+      nextSync: '2024-01-15T10:30:00.000Z'
+    mocks:
+      - nodeType: n8n-nodes-base.httpRequest
+        nodeName: Fetch EHR Updates
+        response:
+          resourceType: Bundle
+          type: searchset
+          total: 5
+          entry:
+            - resource:
+                resourceType: Patient
+                id: PAT004
+                meta:
+                  lastUpdated: '2024-01-15T10:10:00Z'
+                identifier:
+                  - system: MRN
+                    value: MRN004
+                name:
+                  - family: Williams
+                    given: [Sarah]
+                gender: female
+                birthDate: '1985-03-10'
+                address:
+                  - line: [321 Pine St]
+                    city: Boston
+                    state: MA
+                    postalCode: '02108'
+            - resource:
+                resourceType: Patient
+                id: PAT005
+                # Missing required MRN
+                name:
+                  - family: Brown
+                    given: [Michael]
+                gender: male
+                birthDate: '1970-08-22'
+            - resource:
+                resourceType: Patient
+                id: PAT006
+                identifier:
+                  - system: MRN
+                    value: MRN006
+                # Missing required fields
+                gender: other
+            - resource:
+                # Malformed patient resource
+                resourceType: InvalidType
+                id: PAT007
+            - resource:
+                resourceType: Patient
+                id: PAT008
+                meta:
+                  lastUpdated: '2024-01-15T10:05:00Z'
+                identifier:
+                  - system: MRN
+                    value: MRN008
+                name:
+                  - family: Davis
+                    given: [Emma]
+                gender: female
+                birthDate: '1992-11-30'
+                address:
+                  - line: [654 Maple Ave]
+                    city: Brookline
+                    state: MA
+                    postalCode: '02446'
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Get Pending Syncs
+        response: []
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Sync to Analytics DB
+        response:
+          rowsAffected: 2
+          success: true
+      - nodeType: n8n-nodes-base.mongoDb
+        nodeName: Sync to NoSQL
+        response:
+          acknowledged: true
+          modifiedCount: 2
+      - nodeType: n8n-nodes-base.elasticsearch
+        nodeName: Update Search Index
+        response:
+          _index: patient-search
+          result: updated
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Quarantine Invalid
+        response:
+          rowsAffected: 2
+          success: true
+      - nodeType: n8n-nodes-base.syslog
+        response:
+          success: true
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Update Sync Status
+        response:
+          rowsAffected: 2
+          success: true
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Store Audit Log
+        response:
+          id: audit-456
+          success: true
+      - nodeType: n8n-nodes-base.emailSend
+        response:
+          messageId: msg-789
+          accepted: [compliance-team@hospital.com]
+
+  - name: Critical sync failure triggers on-call alert
+    trigger:
+      node: Schedule Sync
+      data: { triggered_at: '2024-01-15T10:30:00.000Z' }
+    expect:
+      syncId: '*'
+      timestamp: '2024-01-15T10:30:00.000Z'
+      summary:
+        totalProcessed: 10
+        successful: 3
+        errors: 7
+        quarantined: 0
+        duration: '*'
+      compliance:
+        encryption: true
+        authentication: true
+        authorization: true
+        dataMinimization: true
+        piiAccessLogged: true
+        encryptionUsed: true
+        auditTrailComplete: true
+      dataAccess:
+        patientsAccessed: 10
+        fieldsAccessed: [name, address, telecom, ssn]
+        purpose: TREATMENT
+        retention: 7 years
+      nextSync: '2024-01-15T10:45:00.000Z'
+    mocks:
+      - nodeType: n8n-nodes-base.httpRequest
+        nodeName: Fetch EHR Updates
+        response:
+          resourceType: Bundle
+          type: searchset
+          total: 10
+          entry:
+            - resource:
+                resourceType: Patient
+                id: PAT009
+                identifier:
+                  - system: MRN
+                    value: MRN009
+                name:
+                  - family: Valid1
+                    given: [Test]
+                gender: male
+                birthDate: '1980-01-01'
+            - resource:
+                resourceType: Patient
+                id: PAT010
+                identifier:
+                  - system: MRN
+                    value: MRN010
+                name:
+                  - family: Valid2
+                    given: [Test]
+                gender: female
+                birthDate: '1985-01-01'
+            - resource:
+                resourceType: Patient
+                id: PAT011
+                identifier:
+                  - system: MRN
+                    value: MRN011
+                name:
+                  - family: Valid3
+                    given: [Test]
+                gender: other
+                birthDate: '1990-01-01'
+            # 7 more entries with errors/missing data
+            - resource: { resourceType: Error }
+            - resource: { resourceType: Error }
+            - resource: { resourceType: Error }
+            - resource: { resourceType: Error }
+            - resource: { resourceType: Error }
+            - resource: { resourceType: Error }
+            - resource: { resourceType: Error }
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Get Pending Syncs
+        response: []
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Sync to Analytics DB
+        response:
+          rowsAffected: 3
+          success: true
+      - nodeType: n8n-nodes-base.mongoDb
+        nodeName: Sync to NoSQL
+        response:
+          acknowledged: true
+          modifiedCount: 3
+      - nodeType: n8n-nodes-base.elasticsearch
+        nodeName: Update Search Index
+        response:
+          _index: patient-search
+          result: updated
+      - nodeType: n8n-nodes-base.syslog
+        response:
+          success: true
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Update Sync Status
+        response:
+          rowsAffected: 3
+          success: true
+      - nodeType: n8n-nodes-base.postgres
+        nodeName: Store Audit Log
+        response:
+          id: audit-789
+          success: true
+      - nodeType: n8n-nodes-base.httpRequest
+        nodeName: Page On-Call
+        response:
+          status: success
+          message: Event enqueued
+          dedup_key: alert-123
+      - nodeType: n8n-nodes-base.emailSend
+        response:
+          messageId: msg-critical-123
+          accepted: [compliance-team@hospital.com]

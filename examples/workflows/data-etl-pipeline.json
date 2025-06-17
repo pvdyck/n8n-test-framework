@@ -1,0 +1,245 @@
+{
+  "name": "Data ETL Pipeline - Daily Sales Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "Daily at 2 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate date range for yesterday\nconst today = new Date();\nconst yesterday = new Date(today);\nyesterday.setDate(yesterday.getDate() - 1);\n\nconst startDate = new Date(yesterday);\nstartDate.setHours(0, 0, 0, 0);\n\nconst endDate = new Date(yesterday);\nendDate.setHours(23, 59, 59, 999);\n\nreturn [{\n  json: {\n    reportDate: yesterday.toISOString().split('T')[0],\n    startTimestamp: startDate.toISOString(),\n    endTimestamp: endDate.toISOString(),\n    reportId: `REPORT-${yesterday.toISOString().split('T')[0]}-${Date.now()}`\n  }\n}];"
+      },
+      "id": "prepare-dates",
+      "name": "Prepare Date Range",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  COUNT(*) as total_orders,\n  SUM(total_amount) as total_revenue,\n  AVG(total_amount) as avg_order_value,\n  COUNT(DISTINCT customer_id) as unique_customers\nFROM orders\nWHERE created_at >= '{{$json.startTimestamp}}'\n  AND created_at <= '{{$json.endTimestamp}}'\n  AND status IN ('completed', 'shipped')",
+        "additionalFields": {}
+      },
+      "id": "extract-orders",
+      "name": "Extract Order Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  p.category,\n  COUNT(DISTINCT oi.order_id) as orders_count,\n  SUM(oi.quantity) as units_sold,\n  SUM(oi.quantity * oi.unit_price) as category_revenue\nFROM order_items oi\nJOIN products p ON oi.product_id = p.id\nJOIN orders o ON oi.order_id = o.id\nWHERE o.created_at >= '{{$node[\"Prepare Date Range\"].json.startTimestamp}}'\n  AND o.created_at <= '{{$node[\"Prepare Date Range\"].json.endTimestamp}}'\n  AND o.status IN ('completed', 'shipped')\nGROUP BY p.category\nORDER BY category_revenue DESC",
+        "additionalFields": {}
+      },
+      "id": "extract-categories",
+      "name": "Extract Category Sales",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  p.id as product_id,\n  p.name as product_name,\n  p.sku,\n  SUM(oi.quantity) as units_sold,\n  SUM(oi.quantity * oi.unit_price) as revenue,\n  p.stock_quantity as current_stock\nFROM order_items oi\nJOIN products p ON oi.product_id = p.id\nJOIN orders o ON oi.order_id = o.id\nWHERE o.created_at >= '{{$node[\"Prepare Date Range\"].json.startTimestamp}}'\n  AND o.created_at <= '{{$node[\"Prepare Date Range\"].json.endTimestamp}}'\n  AND o.status IN ('completed', 'shipped')\nGROUP BY p.id, p.name, p.sku, p.stock_quantity\nORDER BY units_sold DESC\nLIMIT 20",
+        "additionalFields": {}
+      },
+      "id": "extract-products",
+      "name": "Extract Top Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Transform and aggregate data\nconst dateInfo = $node['Prepare Date Range'].json;\nconst orderStats = $node['Extract Order Data'].json[0];\nconst categoryData = $node['Extract Category Sales'].json;\nconst topProducts = $node['Extract Top Products'].json;\n\n// Calculate additional metrics\nconst conversionRate = orderStats.unique_customers > 0 \n  ? (orderStats.total_orders / orderStats.unique_customers * 100).toFixed(2)\n  : 0;\n\n// Find best performing category\nconst bestCategory = categoryData.length > 0 ? categoryData[0] : null;\n\n// Calculate inventory alerts\nconst lowStockProducts = topProducts.filter(p => p.current_stock < p.units_sold * 7);\n\n// Format currency\nconst formatCurrency = (amount) => {\n  return new Intl.NumberFormat('en-US', {\n    style: 'currency',\n    currency: 'USD'\n  }).format(amount || 0);\n};\n\nreturn [{\n  json: {\n    reportId: dateInfo.reportId,\n    reportDate: dateInfo.reportDate,\n    summary: {\n      totalOrders: parseInt(orderStats.total_orders),\n      totalRevenue: formatCurrency(orderStats.total_revenue),\n      avgOrderValue: formatCurrency(orderStats.avg_order_value),\n      uniqueCustomers: parseInt(orderStats.unique_customers),\n      conversionRate: `${conversionRate}%`\n    },\n    categoryPerformance: categoryData.map(cat => ({\n      category: cat.category,\n      revenue: formatCurrency(cat.category_revenue),\n      unitsSold: parseInt(cat.units_sold),\n      orderCount: parseInt(cat.orders_count)\n    })),\n    topProducts: topProducts.slice(0, 10).map(prod => ({\n      name: prod.product_name,\n      sku: prod.sku,\n      unitsSold: parseInt(prod.units_sold),\n      revenue: formatCurrency(prod.revenue),\n      stockLevel: parseInt(prod.current_stock),\n      needsRestock: prod.current_stock < prod.units_sold * 7\n    })),\n    alerts: {\n      lowStockCount: lowStockProducts.length,\n      lowStockProducts: lowStockProducts.map(p => ({\n        name: p.product_name,\n        sku: p.sku,\n        currentStock: p.current_stock,\n        weeklyVelocity: Math.round(p.units_sold * 7)\n      }))\n    },\n    metadata: {\n      generatedAt: new Date().toISOString(),\n      dataSource: 'Production Database',\n      reportType: 'daily_sales_summary'\n    }\n  }\n}];"
+      },
+      "id": "transform-data",
+      "name": "Transform & Aggregate",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "analytics-reports",
+        "fileName": "={{$json.reportDate}}/sales-report-{{$json.reportId}}.json",
+        "binaryPropertyName": "data",
+        "additionalFields": {
+          "storageClass": "STANDARD_IA",
+          "acl": "private"
+        }
+      },
+      "id": "store-s3",
+      "name": "Store in S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "content": "={{JSON.stringify($json, null, 2)}}",
+        "fileName": "={{$json.reportId}}.json",
+        "mimeType": "application/json"
+      },
+      "id": "create-file",
+      "name": "Create Report File",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "insert",
+        "table": "analytics_reports",
+        "columns": "report_id,report_date,report_type,total_revenue,total_orders,s3_path,created_at",
+        "additionalFields": {}
+      },
+      "id": "log-report",
+      "name": "Log Report Metadata",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "analytics@company.com",
+        "toEmail": "management@company.com",
+        "subject": "Daily Sales Report - {{$node['Transform & Aggregate'].json.reportDate}}",
+        "text": "Please find attached the daily sales report for {{$node['Transform & Aggregate'].json.reportDate}}.\n\nKey Highlights:\n- Total Revenue: {{$node['Transform & Aggregate'].json.summary.totalRevenue}}\n- Total Orders: {{$node['Transform & Aggregate'].json.summary.totalOrders}}\n- Average Order Value: {{$node['Transform & Aggregate'].json.summary.avgOrderValue}}\n- Unique Customers: {{$node['Transform & Aggregate'].json.summary.uniqueCustomers}}\n\n{{$node['Transform & Aggregate'].json.alerts.lowStockCount}} products need restocking.",
+        "attachments": {
+          "binaryProperties": ["data"]
+        },
+        "options": {}
+      },
+      "id": "email-report",
+      "name": "Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$node['Transform & Aggregate'].json.alerts.lowStockCount}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-alerts",
+      "name": "Has Inventory Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "channel": "#inventory-alerts",
+        "text": ":warning: Low Stock Alert\n\n{{$node['Transform & Aggregate'].json.alerts.lowStockCount}} products are running low:\n\n{{$node['Transform & Aggregate'].json.alerts.lowStockProducts.map(p => `• ${p.name} (${p.sku}): ${p.currentStock} units remaining`).join('\\n')}}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "slack-alert",
+      "name": "Send Inventory Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "completed"
+            }
+          ],
+          "number": [
+            {
+              "name": "recordsProcessed",
+              "value": "={{$node['Extract Order Data'].json[0].total_orders + $node['Extract Category Sales'].json.length + $node['Extract Top Products'].json.length}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "completion-status",
+      "name": "Set Completion Status",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Daily at 2 AM": {
+      "main": [[{ "node": "Prepare Date Range", "type": "main", "index": 0 }]]
+    },
+    "Prepare Date Range": {
+      "main": [[
+        { "node": "Extract Order Data", "type": "main", "index": 0 },
+        { "node": "Extract Category Sales", "type": "main", "index": 0 },
+        { "node": "Extract Top Products", "type": "main", "index": 0 }
+      ]]
+    },
+    "Extract Order Data": {
+      "main": [[{ "node": "Transform & Aggregate", "type": "main", "index": 0 }]]
+    },
+    "Extract Category Sales": {
+      "main": [[{ "node": "Transform & Aggregate", "type": "main", "index": 0 }]]
+    },
+    "Extract Top Products": {
+      "main": [[{ "node": "Transform & Aggregate", "type": "main", "index": 0 }]]
+    },
+    "Transform & Aggregate": {
+      "main": [[
+        { "node": "Create Report File", "type": "main", "index": 0 },
+        { "node": "Has Inventory Alerts?", "type": "main", "index": 0 }
+      ]]
+    },
+    "Create Report File": {
+      "main": [[
+        { "node": "Store in S3", "type": "main", "index": 0 },
+        { "node": "Email Report", "type": "main", "index": 0 }
+      ]]
+    },
+    "Store in S3": {
+      "main": [[{ "node": "Log Report Metadata", "type": "main", "index": 0 }]]
+    },
+    "Log Report Metadata": {
+      "main": [[{ "node": "Set Completion Status", "type": "main", "index": 0 }]]
+    },
+    "Email Report": {
+      "main": [[{ "node": "Set Completion Status", "type": "main", "index": 0 }]]
+    },
+    "Has Inventory Alerts?": {
+      "main": [
+        [{ "node": "Send Inventory Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Send Inventory Alert": {
+      "main": [[{ "node": "Set Completion Status", "type": "main", "index": 0 }]]
+    }
+  }
+}

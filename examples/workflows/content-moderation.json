@@ -1,0 +1,460 @@
+{
+  "name": "AI-Powered Content Moderation Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content/moderate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "content-webhook",
+      "name": "Content Submission",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and prepare content for moderation\nconst content = items[0].json;\nconst errors = [];\n\n// Validate required fields\nif (!content.text && !content.imageUrl) {\n  errors.push('Either text or imageUrl is required');\n}\n\nif (!content.contentType) {\n  errors.push('Content type is required (text, image, or mixed)');\n}\n\nif (!content.userId) {\n  errors.push('User ID is required');\n}\n\nif (!content.platform) {\n  errors.push('Platform is required');\n}\n\nif (errors.length > 0) {\n  throw new Error(errors.join('; '));\n}\n\n// Generate content ID\nconst contentId = `CONTENT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\n// Calculate content hash for duplicate detection\nconst crypto = require('crypto');\nconst contentHash = crypto.createHash('sha256')\n  .update(content.text || content.imageUrl || '')\n  .digest('hex');\n\n// Extract metadata\nconst metadata = {\n  wordCount: content.text ? content.text.split(/\\s+/).length : 0,\n  hasUrls: content.text ? /https?:\\/\\/[^\\s]+/.test(content.text) : false,\n  hasEmails: content.text ? /[\\w.-]+@[\\w.-]+\\.[a-zA-Z]{2,}/.test(content.text) : false,\n  language: content.language || 'en',\n  submittedAt: new Date().toISOString()\n};\n\nreturn [{\n  json: {\n    contentId,\n    contentHash,\n    userId: content.userId,\n    platform: content.platform,\n    contentType: content.contentType,\n    text: content.text || null,\n    imageUrl: content.imageUrl || null,\n    metadata,\n    moderationStatus: 'pending',\n    checks: {\n      duplicate: false,\n      profanity: false,\n      spam: false,\n      toxicity: false,\n      nsfw: false,\n      pii: false\n    },\n    scores: {},\n    actions: []\n  }\n}];"
+      },
+      "id": "prepare-content",
+      "name": "Prepare Content",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "findOne",
+        "collection": "moderated_content",
+        "query": "={{JSON.stringify({contentHash: $json.contentHash})}}",
+        "options": {}
+      },
+      "id": "check-duplicate",
+      "name": "Check for Duplicates",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json._id}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "is-duplicate",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/moderations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "input": "={{$node['Prepare Content'].json.text}}",
+          "model": "text-moderation-latest"
+        },
+        "options": {}
+      },
+      "id": "openai-moderation",
+      "name": "OpenAI Text Moderation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://commentanalyzer.googleapis.com/v1alpha1/comments:analyze",
+        "sendQuery": true,
+        "queryParameters": {
+          "key": "={{$credentials.apiKey}}"
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "comment": {
+            "text": "={{$node['Prepare Content'].json.text}}"
+          },
+          "requestedAttributes": {
+            "TOXICITY": {},
+            "SEVERE_TOXICITY": {},
+            "IDENTITY_ATTACK": {},
+            "INSULT": {},
+            "PROFANITY": {},
+            "THREAT": {},
+            "SPAM": {}
+          }
+        },
+        "options": {}
+      },
+      "id": "perspective-api",
+      "name": "Google Perspective API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node['Prepare Content'].json.contentType}}",
+              "operation": "contains",
+              "value2": "image"
+            }
+          ]
+        }
+      },
+      "id": "has-image",
+      "name": "Has Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://api.sightengine.com/1.0/check.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "models": "nudity,weapons,alcohol,drugs,offensive,gore",
+          "api_user": "={{$credentials.apiUser}}",
+          "api_secret": "={{$credentials.apiSecret}}"
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "url": "={{$node['Prepare Content'].json.imageUrl}}"
+        },
+        "options": {}
+      },
+      "id": "image-moderation",
+      "name": "Image Moderation API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate moderation results\nconst content = $node['Prepare Content'].json;\nconst openAiResult = $node['OpenAI Text Moderation'].json.results?.[0] || {};\nconst perspectiveResult = $node['Google Perspective API'].json || {};\nconst imageResult = $node['Has Image?'].json.contentType?.includes('image') \n  ? $node['Image Moderation API'].json \n  : null;\n\n// Process OpenAI results\nconst openAiFlags = openAiResult.categories || {};\nconst openAiScores = openAiResult.category_scores || {};\n\n// Process Perspective API results\nconst perspectiveScores = {};\nif (perspectiveResult.attributeScores) {\n  Object.entries(perspectiveResult.attributeScores).forEach(([key, value]) => {\n    perspectiveScores[key.toLowerCase()] = value.summaryScore?.value || 0;\n  });\n}\n\n// Process image moderation results\nconst imageFlags = {};\nif (imageResult) {\n  imageFlags.nudity = imageResult.nudity?.raw > 0.5;\n  imageFlags.weapons = imageResult.weapons > 0.5;\n  imageFlags.alcohol = imageResult.alcohol > 0.5;\n  imageFlags.drugs = imageResult.drugs > 0.5;\n  imageFlags.gore = imageResult.gore?.prob > 0.5;\n  imageFlags.offensive = imageResult.offensive?.prob > 0.5;\n}\n\n// Calculate overall risk score\nconst riskFactors = [];\nlet riskScore = 0;\n\n// Text risk factors\nif (openAiFlags.hate || perspectiveScores.toxicity > 0.7) {\n  riskFactors.push('hate_speech');\n  riskScore += 30;\n}\n\nif (openAiFlags.violence || perspectiveScores.threat > 0.7) {\n  riskFactors.push('violence');\n  riskScore += 25;\n}\n\nif (openAiFlags.sexual || openAiFlags['sexual/minors']) {\n  riskFactors.push('sexual_content');\n  riskScore += 35;\n}\n\nif (perspectiveScores.spam > 0.8) {\n  riskFactors.push('spam');\n  riskScore += 20;\n}\n\nif (perspectiveScores.profanity > 0.8) {\n  riskFactors.push('profanity');\n  riskScore += 15;\n}\n\n// Image risk factors\nif (imageFlags.nudity || imageFlags.gore) {\n  riskFactors.push('inappropriate_imagery');\n  riskScore += 40;\n}\n\nif (imageFlags.weapons || imageFlags.drugs) {\n  riskFactors.push('dangerous_content');\n  riskScore += 30;\n}\n\n// Determine action\nlet action = 'approve';\nlet requiresReview = false;\n\nif (riskScore >= 50) {\n  action = 'block';\n} else if (riskScore >= 25) {\n  action = 'flag';\n  requiresReview = true;\n} else if (riskScore >= 10) {\n  action = 'shadow_ban';\n}\n\n// Check for PII\nconst piiPatterns = {\n  ssn: /\\b\\d{3}-\\d{2}-\\d{4}\\b/,\n  creditCard: /\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b/,\n  phone: /\\b\\d{3}[\\s-]?\\d{3}[\\s-]?\\d{4}\\b/\n};\n\nconst hasPii = content.text && Object.values(piiPatterns).some(pattern => pattern.test(content.text));\nif (hasPii) {\n  riskFactors.push('pii_detected');\n  action = 'block';\n  riskScore = 100;\n}\n\nreturn [{\n  json: {\n    ...content,\n    moderationStatus: action === 'approve' ? 'approved' : 'rejected',\n    requiresReview,\n    riskScore,\n    riskFactors,\n    action,\n    checks: {\n      duplicate: false,\n      profanity: perspectiveScores.profanity > 0.8 || openAiFlags.harassment,\n      spam: perspectiveScores.spam > 0.8,\n      toxicity: perspectiveScores.toxicity > 0.7 || openAiFlags.hate,\n      nsfw: openAiFlags.sexual || imageFlags.nudity,\n      pii: hasPii\n    },\n    scores: {\n      openai: openAiScores,\n      perspective: perspectiveScores,\n      image: imageResult || {}\n    },\n    moderatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "moderated_content",
+        "fields": {
+          "contentId": "={{$json.contentId}}",
+          "contentHash": "={{$json.contentHash}}",
+          "userId": "={{$json.userId}}",
+          "platform": "={{$json.platform}}",
+          "contentType": "={{$json.contentType}}",
+          "text": "={{$json.text}}",
+          "imageUrl": "={{$json.imageUrl}}",
+          "moderationStatus": "={{$json.moderationStatus}}",
+          "action": "={{$json.action}}",
+          "riskScore": "={{$json.riskScore}}",
+          "riskFactors": "={{$json.riskFactors}}",
+          "checks": "={{$json.checks}}",
+          "scores": "={{$json.scores}}",
+          "metadata": "={{$json.metadata}}",
+          "moderatedAt": "={{$json.moderatedAt}}"
+        }
+      },
+      "id": "save-results",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.action}}",
+              "operation": "equals",
+              "value2": "block"
+            }
+          ]
+        }
+      },
+      "id": "is-blocked",
+      "name": "Should Block?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "user",
+        "operation": "update",
+        "userId": "={{$json.userId}}",
+        "updateFields": {
+          "customAttributes": {
+            "violations": "={{($json.user?.violations || 0) + 1}}",
+            "lastViolation": "={{$json.moderatedAt}}",
+            "riskLevel": "={{$json.riskScore > 75 ? 'high' : ($json.riskScore > 25 ? 'medium' : 'low')}}"
+          }
+        }
+      },
+      "id": "update-user",
+      "name": "Update User Record",
+      "type": "n8n-nodes-base.firebase",
+      "typeVersion": 1,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.requiresReview}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "needs-review",
+      "name": "Needs Manual Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 500]
+    },
+    {
+      "parameters": {
+        "channel": "#content-review",
+        "text": ":eyes: Content requires manual review",
+        "otherOptions": {
+          "mrkdwn": true
+        },
+        "blocksUi": {
+          "blocksValues": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Content ID:* `{{$json.contentId}}`\\n*User:* {{$json.userId}}\\n*Platform:* {{$json.platform}}\\n*Risk Score:* {{$json.riskScore}}/100\\n*Risk Factors:* {{$json.riskFactors.join(', ')}}"
+              }
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Content Preview:*\\n{{$json.text ? $json.text.substring(0, 200) + '...' : 'Image content'}}"
+              }
+            },
+            {
+              "type": "actions",
+              "elements": [
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Approve"
+                  },
+                  "style": "primary",
+                  "value": "approve_{{$json.contentId}}"
+                },
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Block"
+                  },
+                  "style": "danger",
+                  "value": "block_{{$json.contentId}}"
+                },
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "View Details"
+                  },
+                  "url": "https://moderation.example.com/content/{{$json.contentId}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "id": "notify-reviewers",
+      "name": "Notify Reviewers",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1650, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check if user should be banned\nconst violations = parseInt($json.user?.violations || 0);\nlet shouldBan = false;\nlet banReason = '';\n\n// Ban if too many violations\nif (violations >= 5) {\n  shouldBan = true;\n  banReason = 'Exceeded violation limit';\n}\n\n// Immediate ban for severe content\nif ($json.riskScore >= 90) {\n  shouldBan = true;\n  banReason = 'Severe content violation';\n}\n\n// Check for repeated offenses\nif ($json.riskFactors.includes('sexual_content') && violations > 2) {\n  shouldBan = true;\n  banReason = 'Repeated sexual content violations';\n}\n\nreturn [{\n  json: {\n    ...items[0].json,\n    shouldBan,\n    banReason,\n    violations\n  }\n}];"
+      },
+      "id": "check-ban",
+      "name": "Check Ban Status",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.shouldBan}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "should-ban",
+      "name": "Should Ban User?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "resource": "user",
+        "operation": "update",
+        "userId": "={{$json.userId}}",
+        "updateFields": {
+          "disabled": true,
+          "customAttributes": {
+            "banReason": "={{$json.banReason}}",
+            "bannedAt": "={{$json.moderatedAt}}"
+          }
+        }
+      },
+      "id": "ban-user",
+      "name": "Ban User",
+      "type": "n8n-nodes-base.firebase",
+      "typeVersion": 1,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate moderation response\nconst result = items[0].json;\nconst isDuplicate = $node['Is Duplicate?'].json._id ? true : false;\n\nlet message = '';\nlet details = {};\n\nif (isDuplicate) {\n  message = 'Content rejected: Duplicate submission';\n  details = {\n    originalContentId: $node['Check for Duplicates'].json.contentId,\n    originalSubmittedAt: $node['Check for Duplicates'].json.moderatedAt\n  };\n} else {\n  switch (result.action) {\n    case 'approve':\n      message = 'Content approved for publication';\n      break;\n    case 'flag':\n      message = 'Content flagged for manual review';\n      break;\n    case 'shadow_ban':\n      message = 'Content visibility limited';\n      break;\n    case 'block':\n      message = 'Content rejected due to policy violations';\n      break;\n  }\n  \n  details = {\n    contentId: result.contentId,\n    action: result.action,\n    riskScore: result.riskScore,\n    violations: result.riskFactors,\n    requiresReview: result.requiresReview\n  };\n}\n\nreturn [{\n  json: {\n    success: result.action === 'approve',\n    message,\n    details,\n    moderationId: result.contentId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2250, 300]
+    },
+    {
+      "parameters": {},
+      "id": "webhook-response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Return cached duplicate result\nconst duplicate = $node['Check for Duplicates'].json;\n\nreturn [{\n  json: {\n    success: duplicate.moderationStatus === 'approved',\n    message: 'Content already moderated',\n    details: {\n      contentId: duplicate.contentId,\n      originalAction: duplicate.action,\n      originalRiskScore: duplicate.riskScore,\n      moderatedAt: duplicate.moderatedAt\n    },\n    moderationId: duplicate.contentId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "duplicate-response",
+      "name": "Duplicate Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 100]
+    }
+  ],
+  "connections": {
+    "Content Submission": {
+      "main": [[{ "node": "Prepare Content", "type": "main", "index": 0 }]]
+    },
+    "Prepare Content": {
+      "main": [[
+        { "node": "Check for Duplicates", "type": "main", "index": 0 },
+        { "node": "OpenAI Text Moderation", "type": "main", "index": 0 },
+        { "node": "Google Perspective API", "type": "main", "index": 0 },
+        { "node": "Has Image?", "type": "main", "index": 0 }
+      ]]
+    },
+    "Check for Duplicates": {
+      "main": [[{ "node": "Is Duplicate?", "type": "main", "index": 0 }]]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [{ "node": "Duplicate Response", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Duplicate Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "Has Image?": {
+      "main": [
+        [{ "node": "Image Moderation API", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "OpenAI Text Moderation": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Google Perspective API": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Image Moderation API": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Results": {
+      "main": [[
+        { "node": "Save to Database", "type": "main", "index": 0 },
+        { "node": "Should Block?", "type": "main", "index": 0 },
+        { "node": "Needs Manual Review?", "type": "main", "index": 0 }
+      ]]
+    },
+    "Save to Database": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    },
+    "Should Block?": {
+      "main": [
+        [{ "node": "Update User Record", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Update User Record": {
+      "main": [[{ "node": "Check Ban Status", "type": "main", "index": 0 }]]
+    },
+    "Check Ban Status": {
+      "main": [[{ "node": "Should Ban User?", "type": "main", "index": 0 }]]
+    },
+    "Should Ban User?": {
+      "main": [
+        [{ "node": "Ban User", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Needs Manual Review?": {
+      "main": [
+        [{ "node": "Notify Reviewers", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Ban User": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    },
+    "Notify Reviewers": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    },
+    "Format Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  }
+}

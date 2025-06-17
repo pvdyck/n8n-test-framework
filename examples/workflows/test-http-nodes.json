@@ -1,0 +1,85 @@
+{
+  "name": "Test HTTP Nodes",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/users",
+        "method": "GET",
+        "options": {}
+      },
+      "name": "HTTP Request GET",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/users",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            }
+          ]
+        }
+      },
+      "name": "HTTP Request POST",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://graphql.example.com",
+        "requestMethod": "POST",
+        "query": "query { users { id name email } }"
+      },
+      "name": "GraphQL",
+      "type": "n8n-nodes-base.graphql",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: {\n  get: items[0].json,\n  post: items[1].json,\n  graphql: items[2].json\n}}];"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "HTTP Request GET", "type": "main", "index": 0 },
+          { "node": "HTTP Request POST", "type": "main", "index": 0 },
+          { "node": "GraphQL", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "HTTP Request GET": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 0 }]]
+    },
+    "HTTP Request POST": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 1 }]]
+    },
+    "GraphQL": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 2 }]]
+    }
+  }
+}

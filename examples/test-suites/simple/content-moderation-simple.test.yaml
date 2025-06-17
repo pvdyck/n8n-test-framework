@@ -1,0 +1,24 @@
+test: Content Moderation
+workflow: ../../workflows/content-moderation.json
+cases:
+  - name: Approve clean content
+    trigger:
+      webhook:
+        text: Great product! Highly recommend.
+        contentType: text
+        userId: user-123
+        platform: reviews
+  - name: Block toxic content
+    trigger:
+      webhook:
+        text: '[toxic content]'
+        contentType: text
+        userId: user-456
+        platform: comments
+  - name: Duplicate content
+    trigger:
+      webhook:
+        text: Duplicate test
+        contentType: text
+        userId: user-789
+        platform: forum

@@ -1,0 +1,89 @@
+{
+  "name": "Test Trigger Nodes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-webhook"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 100],
+      "webhookId": "test-webhook-id"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "pollInterval": 2,
+        "options": {}
+      },
+      "name": "Email Trigger",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "topic": "test-topic",
+        "options": {}
+      },
+      "name": "MQTT Trigger",
+      "type": "n8n-nodes-base.mqttTrigger",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "event": "push",
+        "owner": "test-owner",
+        "repository": "test-repo"
+      },
+      "name": "GitHub Trigger",
+      "type": "n8n-nodes-base.githubTrigger",
+      "typeVersion": 1,
+      "position": [250, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: {\n  webhook: items[0]?.json || {},\n  schedule: items[1]?.json || {},\n  email: items[2]?.json || {},\n  mqtt: items[3]?.json || {},\n  github: items[4]?.json || {}\n}}];"
+      },
+      "name": "Combine Triggers",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Combine Triggers", "type": "main", "index": 0 }]]
+    },
+    "Schedule Trigger": {
+      "main": [[{ "node": "Combine Triggers", "type": "main", "index": 1 }]]
+    },
+    "Email Trigger": {
+      "main": [[{ "node": "Combine Triggers", "type": "main", "index": 2 }]]
+    },
+    "MQTT Trigger": {
+      "main": [[{ "node": "Combine Triggers", "type": "main", "index": 3 }]]
+    },
+    "GitHub Trigger": {
+      "main": [[{ "node": "Combine Triggers", "type": "main", "index": 4 }]]
+    }
+  }
+}

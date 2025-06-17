@@ -1,0 +1,67 @@
+test: Data Processing Workflow Tests
+workflow: ../../workflows/data-processing.json
+config:
+  concurrency: 3
+cases:
+  - name: Should transform CSV data correctly
+    input:
+      csvData: name,age,city\nJohn,30,NYC\nJane,25,LA
+    expect:
+      processed: 3
+      transformed:
+        - name: John
+          age: 30
+          email: john@example.com
+        - name: Jane
+          age: 25
+          email: jane@example.com
+        - name: Bob
+          age: 35
+          email: bob@example.com
+  - name: Should filter records by age
+    input:
+      records:
+        - name: Alice
+          age: 20
+        - name: Bob
+          age: 17
+        - name: Charlie
+          age: 25
+      minAge: 18
+    expect:
+      filtered:
+        - name: John
+          age: 30
+        - name: Bob
+          age: 35
+  - name: Should aggregate data correctly
+    input:
+      transactions:
+        - amount: 100
+          category: food
+        - amount: 50
+          category: transport
+        - amount: 200
+          category: food
+        - amount: 75
+          category: transport
+    expect:
+      totals:
+        count: 3
+        totalAge: 90
+        averageAge: 30
+  - name: Should handle empty input gracefully
+    input:
+      data: []
+    expect:
+      processed: 0
+      errors: []
+      status: success
+  - name: Should validate required fields
+    input:
+      record:
+        name: Test User
+    expect:
+      valid: false
+      errors:
+        - 'Missing required field: email'

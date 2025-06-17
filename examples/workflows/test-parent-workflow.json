@@ -1,0 +1,45 @@
+{
+  "name": "Test Parent Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "sub-workflow-1"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "name": "Execute Sub-Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process sub-workflow results\nconst subResults = items[0].json;\nreturn [{\n  json: {\n    parentData: $node['Start'].json,\n    subWorkflowResult: subResults,\n    processedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Process Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [[{ "node": "Execute Sub-Workflow", "type": "main", "index": 0 }]]
+    },
+    "Execute Sub-Workflow": {
+      "main": [[{ "node": "Process Results", "type": "main", "index": 0 }]]
+    }
+  }
+}

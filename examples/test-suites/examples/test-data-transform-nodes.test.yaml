@@ -1,0 +1,44 @@
+test: Data Transform Node Types Test
+workflow: ../../workflows/test-data-transform-nodes.json
+cases:
+  - name: Test all data transform node types
+    input:
+      value: hello world
+      a: 10
+      b: 20
+      score: 75
+      type: email
+    expect:
+      set:
+        transformed: HELLO WORLD
+        value: hello world
+        a: 10
+        b: 20
+        score: 75
+        type: email
+      function:
+        calculated: 30
+        original:
+          value: hello world
+          a: 10
+          b: 20
+          score: 75
+          type: email
+      if:
+        value: hello world
+        a: 10
+        b: 20
+        score: 75
+        type: email
+      switch:
+        value: hello world
+        a: 10
+        b: 20
+        score: 75
+        type: email
+      merge:
+        value: hello world
+        a: 10
+        b: 20
+        score: 75
+        type: email

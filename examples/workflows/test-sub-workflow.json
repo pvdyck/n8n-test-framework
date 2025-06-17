@@ -1,0 +1,66 @@
+{
+  "name": "Test Sub-Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "processedBy",
+              "value": "sub-workflow"
+            },
+            {
+              "name": "originalData",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ],
+          "number": [
+            {
+              "name": "multipliedValue",
+              "value": "={{ $json.value * 2 }}"
+            }
+          ]
+        }
+      },
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/process",
+        "method": "POST",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "data",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        }
+      },
+      "name": "External API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Transform Data", "type": "main", "index": 0 }]]
+    },
+    "Transform Data": {
+      "main": [[{ "node": "External API Call", "type": "main", "index": 0 }]]
+    }
+  }
+}

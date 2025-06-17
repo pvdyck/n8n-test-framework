@@ -1,0 +1,113 @@
+{
+  "name": "Email Trigger Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "host": "imap.example.com",
+        "port": 993,
+        "secure": true,
+        "options": {
+          "customEmailConfig": "new-emails"
+        }
+      },
+      "id": "email-trigger",
+      "name": "Email Trigger",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract email data\nconst email = items[0].json;\n\n// Parse subject for ticket number\nconst ticketMatch = email.subject.match(/\\[TICKET-(\\d+)\\]/);\nconst ticketNumber = ticketMatch ? ticketMatch[1] : null;\n\nreturn [{\n  json: {\n    from: email.from,\n    subject: email.subject,\n    body: email.text || email.html,\n    ticketNumber,\n    receivedAt: email.date,\n    hasAttachments: email.attachments && email.attachments.length > 0\n  }\n}];"
+      },
+      "id": "parse-email",
+      "name": "Parse Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.ticketNumber}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-ticket",
+      "name": "Has Ticket Number?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "PATCH",
+        "url": "=https://api.example.com/tickets/{{$json.ticketNumber}}",
+        "options": {},
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "comment",
+              "value": "={{$json.body}}"
+            },
+            {
+              "name": "from",
+              "value": "={{$json.from}}"
+            }
+          ]
+        }
+      },
+      "id": "update-ticket",
+      "name": "Update Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://api.example.com/tickets",
+        "options": {},
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "subject",
+              "value": "={{$json.subject}}"
+            },
+            {
+              "name": "description",
+              "value": "={{$json.body}}"
+            },
+            {
+              "name": "from",
+              "value": "={{$json.from}}"
+            }
+          ]
+        }
+      },
+      "id": "create-ticket",
+      "name": "Create New Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Email Trigger": {
+      "main": [[{ "node": "Parse Email", "type": "main", "index": 0 }]]
+    },
+    "Parse Email": {
+      "main": [[{ "node": "Has Ticket Number?", "type": "main", "index": 0 }]]
+    },
+    "Has Ticket Number?": {
+      "main": [
+        [{ "node": "Update Ticket", "type": "main", "index": 0 }],
+        [{ "node": "Create New Ticket", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

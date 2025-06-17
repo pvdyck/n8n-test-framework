@@ -1,0 +1,28 @@
+test: User Registration Simple Test
+workflow: ../../workflows/user-registration.json
+cases:
+  - name: Valid user signup
+    input:
+      email: john@example.com
+      name: John Doe
+    expect:
+      userId: user-12345
+      emailSent: true
+      onboardingStatus: completed
+      timestamp: "*"
+    mocks:
+      Create User API:
+        status: 201
+        body:
+          id: user-12345
+          email: john@example.com
+      Send Welcome Email:
+        success: true
+        messageId: msg-123
+        
+  - name: Invalid email
+    input:
+      email: invalid-email
+      name: Test User
+    expect:
+      error: Invalid email format

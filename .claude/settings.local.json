@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(rg:*)",
+      "Bash(./n8n-test:*)",
+      "Bash(LOG_LEVEL=DEBUG ./n8n-test run examples/test-suites/user-registration-ultra-simple.test.yaml --verbose 2 >& 1)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(tree:*)",
+      "Bash(jq:*)",
+      "Bash(echo:*)",
+      "Bash(cp:*)",
+      "Bash(git init:*)",
+      "Bash(git -C /Users/pvdyck/Dev/n8n-test-framework add .)",
+      "Bash(npm:*)",
+      "Bash(node_modules/.bin/ts-node:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm outdated)",
+      "Bash(npm run start:*)",
+      "Bash(npm run lint:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

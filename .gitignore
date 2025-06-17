@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output (removed - no longer building)
+# JavaScript files in src (should be TypeScript only)
+src/**/*.js
+
+# Coverage reports
+coverage/
+*.lcov
+.nyc_output/
+
+# Test outputs
+test-results/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+.n8n-test-temp/
+
+# Examples coverage (generated)
+examples/coverage/
+
+# But keep the example coverage folder structure
+!examples/coverage/.gitkeep

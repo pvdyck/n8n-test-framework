@@ -1,0 +1,311 @@
+{
+  "name": "Incident Management System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST", 
+        "path": "alerts/incident",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "incident-webhook",
+      "name": "Incident Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse and validate incident data\nconst incident = items[0].json;\n\n// Validate required fields\nif (!incident.service || !incident.severity || !incident.description) {\n  throw new Error('Missing required fields: service, severity, and description are required');\n}\n\n// Normalize severity\nconst severityMap = {\n  'critical': 'P1',\n  'high': 'P2',\n  'medium': 'P3',\n  'low': 'P4'\n};\n\nconst severity = severityMap[incident.severity.toLowerCase()] || 'P3';\n\n// Generate incident ID\nconst incidentId = `INC-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;\n\n// Determine escalation based on severity and service\nlet escalationLevel = 1;\nlet assigneeTeam = 'support';\n\nif (severity === 'P1') {\n  escalationLevel = 3;\n  assigneeTeam = 'engineering';\n} else if (severity === 'P2') {\n  escalationLevel = 2;\n  assigneeTeam = 'devops';\n}\n\n// Check if it's business hours (9 AM - 6 PM weekdays)\nconst now = new Date();\nconst hour = now.getHours();\nconst dayOfWeek = now.getDay();\nconst isBusinessHours = dayOfWeek >= 1 && dayOfWeek <= 5 && hour >= 9 && hour < 18;\n\nreturn [{\n  json: {\n    incidentId,\n    service: incident.service,\n    severity,\n    severityNumeric: parseInt(severity.substring(1)),\n    description: incident.description,\n    affectedSystems: incident.affectedSystems || [],\n    reportedBy: incident.reportedBy || 'monitoring-system',\n    escalationLevel,\n    assigneeTeam,\n    isBusinessHours,\n    createdAt: new Date().toISOString(),\n    status: 'open',\n    source: incident.source || 'webhook',\n    metrics: incident.metrics || {},\n    environment: incident.environment || 'production'\n  }\n}];"
+      },
+      "id": "process-incident",
+      "name": "Process Incident Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "create",
+        "project": "OPS",
+        "issueType": "Incident",
+        "summary": "[{{$json.severity}}] {{$json.service}} - {{$json.description}}",
+        "additionalFields": {
+          "description": "Incident ID: {{$json.incidentId}}\\n\\nDescription: {{$json.description}}\\n\\nAffected Systems: {{$json.affectedSystems.join(', ')}}\\n\\nReported By: {{$json.reportedBy}}\\n\\nEnvironment: {{$json.environment}}",
+          "priority": "={{$json.severity}}",
+          "labels": [
+            "incident",
+            "{{$json.severity}}",
+            "{{$json.service}}"
+          ],
+          "customFields": {
+            "customfield_10001": "{{$json.incidentId}}"
+          }
+        }
+      },
+      "id": "create-jira",
+      "name": "Create JIRA Ticket",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "incident",
+        "operation": "create",
+        "summary": "{{$json.service}} - {{$json.description}}",
+        "incidentKey": "{{$json.incidentId}}",
+        "additionalFields": {
+          "urgency": "={{$json.severity === 'P1' ? 'high' : ($json.severity === 'P2' ? 'high' : 'low')}}",
+          "service": {
+            "id": "{{$json.service}}",
+            "type": "service_reference"
+          },
+          "escalationPolicy": {
+            "id": "{{$json.assigneeTeam}}-escalation",
+            "type": "escalation_policy_reference"
+          }
+        }
+      },
+      "id": "create-pagerduty",
+      "name": "Create PagerDuty Incident",
+      "type": "n8n-nodes-base.pagerDuty",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.severityNumeric}}",
+              "operation": "smallerEqual",
+              "value2": 2
+            }
+          ]
+        }
+      },
+      "id": "check-severity",
+      "name": "Is P1 or P2?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "channel": "#incidents-critical",
+        "text": ":rotating_light: *{{$json.severity}} Incident Alert*\n\n*Service:* {{$json.service}}\n*Description:* {{$json.description}}\n*Incident ID:* `{{$json.incidentId}}`\n*Environment:* {{$json.environment}}\n*Affected Systems:* {{$json.affectedSystems.join(', ')}}\n\n<https://jira.example.com/browse/{{$node['Create JIRA Ticket'].json.key}}|View in JIRA>",
+        "otherOptions": {
+          "mrkdwn": true,
+          "unfurl_links": false
+        },
+        "blocksUi": {
+          "blocksValues": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Incident Response Required*"
+              }
+            },
+            {
+              "type": "actions",
+              "elements": [
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Acknowledge"
+                  },
+                  "value": "{{$json.incidentId}}",
+                  "action_id": "acknowledge_incident"
+                },
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Join War Room"
+                  },
+                  "url": "https://meet.example.com/incident-{{$json.incidentId}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "id": "alert-critical",
+      "name": "Alert Critical Channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#incidents",
+        "text": ":warning: *{{$json.severity}} Incident*\n\n*Service:* {{$json.service}}\n*Description:* {{$json.description}}\n*Incident ID:* `{{$json.incidentId}}`\n\n<https://jira.example.com/browse/{{$node['Create JIRA Ticket'].json.key}}|View in JIRA>",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "alert-general",
+      "name": "Alert General Channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "insert",
+        "table": "incidents",
+        "columns": "incident_id,service,severity,description,status,assigned_team,jira_key,pagerduty_id,created_at",
+        "additionalFields": {}
+      },
+      "id": "log-incident",
+      "name": "Log to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.isBusinessHours}}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "check-hours",
+      "name": "Outside Business Hours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "resource": "SMS",
+        "operation": "send",
+        "from": "+1234567890",
+        "to": "={{$json.severity === 'P1' ? '+1987654321,+1876543210' : '+1987654321'}}",
+        "message": "URGENT: {{$json.severity}} incident on {{$json.service}}. ID: {{$json.incidentId}}. Check Slack for details."
+      },
+      "id": "send-sms",
+      "name": "Send SMS Alert",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://api.statuspage.io/v1/pages/{{pageId}}/incidents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "incident": {
+            "name": "{{$json.service}} Service Degradation",
+            "status": "investigating",
+            "impact_override": "={{$json.severity === 'P1' ? 'critical' : ($json.severity === 'P2' ? 'major' : 'minor')}}",
+            "body": "We are currently investigating issues with {{$json.service}}. Updates will be provided as more information becomes available.",
+            "component_ids": ["{{$json.service}}-component-id"],
+            "metadata": {
+              "incident_id": "{{$json.incidentId}}"
+            }
+          }
+        }
+      },
+      "id": "update-statuspage",
+      "name": "Update Status Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Start monitoring and health checks\nconst incident = items[0].json;\nconst monitoringEndpoints = {\n  'api-service': 'https://api.example.com/health',\n  'web-app': 'https://app.example.com/health',\n  'database': 'https://db-monitor.example.com/status',\n  'payment-service': 'https://payments.example.com/health'\n};\n\nconst endpoint = monitoringEndpoints[incident.service] || 'https://status.example.com/health';\n\nreturn [{\n  json: {\n    ...incident,\n    monitoringEndpoint: endpoint,\n    monitoringInterval: incident.severity === 'P1' ? 30 : 60, // seconds\n    autoResolveAfter: incident.severity === 'P1' ? 3600 : 7200, // seconds\n    runbookUrl: `https://wiki.example.com/runbooks/${incident.service}`,\n    metricsUrl: `https://grafana.example.com/d/${incident.service}-dashboard`\n  }\n}];"
+      },
+      "id": "setup-monitoring",
+      "name": "Setup Monitoring",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate incident response\nconst incident = $node['Process Incident Data'].json;\nconst jiraTicket = $node['Create JIRA Ticket'].json;\nconst pagerDutyIncident = $node['Create PagerDuty Incident'].json || {};\n\nreturn [{\n  json: {\n    success: true,\n    incidentId: incident.incidentId,\n    message: 'Incident created and teams notified',\n    details: {\n      severity: incident.severity,\n      service: incident.service,\n      status: 'active',\n      jiraTicket: jiraTicket.key,\n      pagerDutyId: pagerDutyIncident.id || null,\n      assignedTeam: incident.assigneeTeam,\n      escalationLevel: incident.escalationLevel\n    },\n    nextSteps: [\n      `Monitor status at: https://jira.example.com/browse/${jiraTicket.key}`,\n      incident.severity === 'P1' ? 'Join the war room immediately' : 'Await team assignment',\n      'Check runbook for troubleshooting steps'\n    ],\n    urls: {\n      jira: `https://jira.example.com/browse/${jiraTicket.key}`,\n      runbook: `https://wiki.example.com/runbooks/${incident.service}`,\n      metrics: `https://grafana.example.com/d/${incident.service}-dashboard`,\n      statusPage: 'https://status.example.com'\n    }\n  }\n}];"
+      },
+      "id": "prepare-response",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {},
+      "id": "webhook-response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    }
+  ],
+  "connections": {
+    "Incident Alert Webhook": {
+      "main": [[{ "node": "Process Incident Data", "type": "main", "index": 0 }]]
+    },
+    "Process Incident Data": {
+      "main": [[
+        { "node": "Create JIRA Ticket", "type": "main", "index": 0 },
+        { "node": "Outside Business Hours?", "type": "main", "index": 0 }
+      ]]
+    },
+    "Create JIRA Ticket": {
+      "main": [[
+        { "node": "Create PagerDuty Incident", "type": "main", "index": 0 },
+        { "node": "Is P1 or P2?", "type": "main", "index": 0 },
+        { "node": "Log to Database", "type": "main", "index": 0 }
+      ]]
+    },
+    "Create PagerDuty Incident": {
+      "main": [[{ "node": "Update Status Page", "type": "main", "index": 0 }]]
+    },
+    "Is P1 or P2?": {
+      "main": [
+        [{ "node": "Alert Critical Channel", "type": "main", "index": 0 }],
+        [{ "node": "Alert General Channel", "type": "main", "index": 0 }]
+      ]
+    },
+    "Alert Critical Channel": {
+      "main": [[{ "node": "Setup Monitoring", "type": "main", "index": 0 }]]
+    },
+    "Alert General Channel": {
+      "main": [[{ "node": "Setup Monitoring", "type": "main", "index": 0 }]]
+    },
+    "Log to Database": {
+      "main": [[{ "node": "Setup Monitoring", "type": "main", "index": 0 }]]
+    },
+    "Outside Business Hours?": {
+      "main": [
+        [{ "node": "Send SMS Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Send SMS Alert": {
+      "main": [[{ "node": "Setup Monitoring", "type": "main", "index": 0 }]]
+    },
+    "Update Status Page": {
+      "main": [[{ "node": "Setup Monitoring", "type": "main", "index": 0 }]]
+    },
+    "Setup Monitoring": {
+      "main": [[{ "node": "Prepare Response", "type": "main", "index": 0 }]]
+    },
+    "Prepare Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  }
+}

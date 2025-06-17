@@ -1,0 +1,30 @@
+test: Communication Node Types Test
+workflow: ../../workflows/test-communication-nodes.json
+cases:
+  - name: Test all communication node types
+    input:
+      recipient: test@example.com
+      subject: Test Notification
+      message: This is a test message
+      phone: '+1234567890'
+    expect:
+      email:
+        messageId: '<email-123@example.com>'
+        accepted: ['test@example.com']
+      slack:
+        ok: true
+        channel: '#notifications'
+        ts: '1234567890.123456'
+      discord:
+        id: '987654321'
+        channel_id: '123456789'
+        content: This is a test message
+      telegram:
+        message_id: 123
+        chat:
+          id: 123456
+          username: username
+      twilio:
+        sid: 'SM1234567890'
+        status: sent
+        to: '+1234567890'

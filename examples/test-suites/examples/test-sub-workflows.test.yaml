@@ -1,0 +1,32 @@
+test: Sub-Workflow Execution Test
+workflow: ../../workflows/test-parent-workflow.json
+cases:
+  - name: Test sub-workflow execution with data transformation
+    input:
+      value: 10
+      message: Hello from parent
+    expect:
+      parentData:
+        value: 10
+        message: Hello from parent
+      subWorkflowResult:
+        success: true
+        apiResponse:
+          id: 123
+          status: processed
+          data:
+            processedBy: sub-workflow
+            originalData: '{"value":10,"message":"Hello from parent"}'
+            multipliedValue: 20
+      processedAt: '2024-01-01T12:00:00.000Z'
+    mocks:
+      - workflowId: sub-workflow-1
+        response:
+          success: true
+          apiResponse:
+            id: 123
+            status: processed
+            data:
+              processedBy: sub-workflow
+              originalData: '{"value":10,"message":"Hello from parent"}'
+              multipliedValue: 20

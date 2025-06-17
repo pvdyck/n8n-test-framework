@@ -1,0 +1,352 @@
+{
+  "name": "User Onboarding Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "users/signup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "signup-webhook",
+      "name": "User Signup Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and enrich user data\nconst user = items[0].json;\nconst errors = [];\n\n// Email validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!user.email || !emailRegex.test(user.email)) {\n  errors.push('Invalid email address');\n}\n\n// Password validation\nif (!user.password || user.password.length < 8) {\n  errors.push('Password must be at least 8 characters');\n}\n\n// Name validation\nif (!user.firstName || !user.lastName) {\n  errors.push('First and last name are required');\n}\n\nif (errors.length > 0) {\n  throw new Error(errors.join('; '));\n}\n\n// Generate user ID and verification token\nconst userId = `USER-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\nconst verificationToken = Buffer.from(`${userId}:${Date.now()}`).toString('base64');\n\n// Determine user segment\nlet segment = 'standard';\nif (user.referralCode) {\n  segment = 'referred';\n} else if (user.companySize && user.companySize > 50) {\n  segment = 'enterprise';\n} else if (user.role && user.role.toLowerCase().includes('developer')) {\n  segment = 'developer';\n}\n\nreturn [{\n  json: {\n    userId,\n    email: user.email.toLowerCase(),\n    firstName: user.firstName.trim(),\n    lastName: user.lastName.trim(),\n    fullName: `${user.firstName.trim()} ${user.lastName.trim()}`,\n    company: user.company || null,\n    role: user.role || 'User',\n    segment,\n    verificationToken,\n    signupDate: new Date().toISOString(),\n    onboardingStep: 1,\n    emailVerified: false,\n    profileCompleted: false,\n    referralCode: user.referralCode || null\n  }\n}];"
+      },
+      "id": "validate-enrich",
+      "name": "Validate & Enrich Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "user",
+        "operation": "create",
+        "additionalFields": {
+          "email": "={{$json.email}}",
+          "name": "={{$json.fullName}}",
+          "externalId": "={{$json.userId}}"
+        }
+      },
+      "id": "create-auth0",
+      "name": "Create Auth0 User",
+      "type": "n8n-nodes-base.auth0",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "insert",
+        "table": "users",
+        "columns": "user_id,email,first_name,last_name,company,role,segment,signup_date,verification_token,referral_code",
+        "additionalFields": {}
+      },
+      "id": "save-user",
+      "name": "Save User to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "personalizations": [{
+            "to": [{ "email": "={{$json.email}}" }],
+            "dynamic_template_data": {
+              "firstName": "={{$json.firstName}}",
+              "verificationLink": "https://app.example.com/verify?token={{$json.verificationToken}}"
+            }
+          }],
+          "from": { "email": "welcome@example.com", "name": "Example Team" },
+          "template_id": "d-verification-email-template"
+        },
+        "options": {}
+      },
+      "id": "send-verification",
+      "name": "Send Verification Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "create",
+        "email": "={{$json.email}}",
+        "additionalFields": {
+          "firstName": "={{$json.firstName}}",
+          "lastName": "={{$json.lastName}}",
+          "company": "={{$json.company}}",
+          "customProperties": {
+            "property": [
+              {
+                "property": "user_id",
+                "value": "={{$json.userId}}"
+              },
+              {
+                "property": "segment",
+                "value": "={{$json.segment}}"
+              },
+              {
+                "property": "onboarding_step",
+                "value": "1"
+              }
+            ]
+          }
+        }
+      },
+      "id": "create-hubspot",
+      "name": "Create HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "amount": 300,
+        "unit": "seconds"
+      },
+      "id": "wait-5min",
+      "name": "Wait 5 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "select",
+        "table": "users",
+        "returnAll": false,
+        "limit": 1,
+        "where": {
+          "condition": "AND",
+          "values": [
+            {
+              "column": "user_id",
+              "value": "={{$json.userId}}"
+            }
+          ]
+        }
+      },
+      "id": "check-verification",
+      "name": "Check Verification Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.email_verified}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "is-verified",
+      "name": "Email Verified?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "personalizations": [{
+            "to": [{ "email": "={{$json.email}}" }],
+            "dynamic_template_data": {
+              "firstName": "={{$json.firstName}}",
+              "dashboardLink": "https://app.example.com/dashboard"
+            }
+          }],
+          "from": { "email": "welcome@example.com", "name": "Example Team" },
+          "template_id": "d-welcome-email-template"
+        }
+      },
+      "id": "send-welcome",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "personalizations": [{
+            "to": [{ "email": "={{$json.email}}" }],
+            "dynamic_template_data": {
+              "firstName": "={{$json.firstName}}",
+              "verificationLink": "https://app.example.com/verify?token={{$json.verification_token}}"
+            }
+          }],
+          "from": { "email": "welcome@example.com", "name": "Example Team" },
+          "template_id": "d-reminder-email-template"
+        }
+      },
+      "id": "send-reminder",
+      "name": "Send Reminder Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "resource": "workflow",
+        "operation": "create",
+        "workflowName": "Onboarding - {{$json.userId}}",
+        "additionalFields": {
+          "dueDate": "={{new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()}}",
+          "assignee": "onboarding-team@example.com"
+        }
+      },
+      "id": "create-task",
+      "name": "Create Onboarding Task",
+      "type": "n8n-nodes-base.asana",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node['Validate & Enrich Data'].json.segment}}",
+              "operation": "equals",
+              "value2": "enterprise"
+            }
+          ]
+        }
+      },
+      "id": "is-enterprise",
+      "name": "Is Enterprise?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "summary": "Enterprise Onboarding Call - {{$node['Validate & Enrich Data'].json.fullName}}",
+        "start": "={{new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()}}",
+        "end": "={{new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString()}}",
+        "additionalFields": {
+          "attendees": [
+            "{{$node['Validate & Enrich Data'].json.email}}",
+            "enterprise-success@example.com"
+          ],
+          "description": "Welcome to Example! This call will help you get started with our enterprise features."
+        }
+      },
+      "id": "schedule-call",
+      "name": "Schedule Onboarding Call",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate response based on user journey\nconst user = $node['Validate & Enrich Data'].json;\nconst authCreated = $node['Create Auth0 User'].json.success !== false;\nconst dbSaved = $node['Save User to Database'].json.user_id !== undefined;\n\nlet nextSteps = [];\n\nif (user.segment === 'enterprise') {\n  nextSteps.push('An onboarding specialist will contact you within 24 hours');\n  nextSteps.push('Check your calendar for your personalized onboarding session');\n} else {\n  nextSteps.push('Verify your email address');\n  nextSteps.push('Complete your profile');\n  nextSteps.push('Explore our getting started guide');\n}\n\nreturn [{\n  json: {\n    success: authCreated && dbSaved,\n    userId: user.userId,\n    message: `Welcome to Example, ${user.firstName}!`,\n    nextSteps,\n    dashboardUrl: 'https://app.example.com/dashboard',\n    verificationRequired: true,\n    segment: user.segment\n  }\n}];"
+      },
+      "id": "prepare-response",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {},
+      "id": "webhook-response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2250, 300]
+    }
+  ],
+  "connections": {
+    "User Signup Webhook": {
+      "main": [[{ "node": "Validate & Enrich Data", "type": "main", "index": 0 }]]
+    },
+    "Validate & Enrich Data": {
+      "main": [[
+        { "node": "Create Auth0 User", "type": "main", "index": 0 },
+        { "node": "Save User to Database", "type": "main", "index": 0 },
+        { "node": "Is Enterprise?", "type": "main", "index": 0 }
+      ]]
+    },
+    "Create Auth0 User": {
+      "main": [[{ "node": "Send Verification Email", "type": "main", "index": 0 }]]
+    },
+    "Save User to Database": {
+      "main": [[{ "node": "Create HubSpot Contact", "type": "main", "index": 0 }]]
+    },
+    "Send Verification Email": {
+      "main": [[{ "node": "Wait 5 Minutes", "type": "main", "index": 0 }]]
+    },
+    "Create HubSpot Contact": {
+      "main": [[{ "node": "Wait 5 Minutes", "type": "main", "index": 0 }]]
+    },
+    "Wait 5 Minutes": {
+      "main": [[{ "node": "Check Verification Status", "type": "main", "index": 0 }]]
+    },
+    "Check Verification Status": {
+      "main": [[{ "node": "Email Verified?", "type": "main", "index": 0 }]]
+    },
+    "Email Verified?": {
+      "main": [
+        [
+          { "node": "Send Welcome Email", "type": "main", "index": 0 },
+          { "node": "Create Onboarding Task", "type": "main", "index": 0 }
+        ],
+        [{ "node": "Send Reminder Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [[{ "node": "Prepare Response", "type": "main", "index": 0 }]]
+    },
+    "Send Reminder Email": {
+      "main": [[{ "node": "Prepare Response", "type": "main", "index": 0 }]]
+    },
+    "Create Onboarding Task": {
+      "main": [[{ "node": "Prepare Response", "type": "main", "index": 0 }]]
+    },
+    "Is Enterprise?": {
+      "main": [
+        [{ "node": "Schedule Onboarding Call", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Schedule Onboarding Call": {
+      "main": [[{ "node": "Prepare Response", "type": "main", "index": 0 }]]
+    },
+    "Prepare Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  }
+}

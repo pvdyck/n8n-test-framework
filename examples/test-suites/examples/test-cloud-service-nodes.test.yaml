@@ -1,0 +1,36 @@
+test: Cloud Service Node Types Test
+workflow: ../../workflows/test-cloud-service-nodes.json
+cases:
+  - name: Test all cloud service node types
+    input:
+      text: Hello world
+      data: { key: value }
+    expect:
+      lambda:
+        StatusCode: 200
+        Payload: '{"result": "processed", "input": {"text": "Hello world", "data": {"key": "value"}}}'
+        ExecutedVersion: '$LATEST'
+      googleCloud:
+        translatedText: Hola mundo
+        detectedSourceLanguage: en
+      azure:
+        etag: '"0x8D9F7E5A6B3C2D1"'
+        lastModified: '2024-01-01T12:00:00.000Z'
+        container: test-container
+        name: test-blob.json
+      watson:
+        language: en
+        sentiment:
+          document:
+            score: 0.95
+            label: positive
+        keywords:
+          - text: Hello world
+            relevance: 0.99
+      digitalOcean:
+        droplets:
+          - id: 12345
+            name: test-droplet
+            status: active
+            size: s-1vcpu-1gb
+            region: { slug: nyc3 }

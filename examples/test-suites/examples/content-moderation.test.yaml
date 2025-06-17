@@ -1,0 +1,118 @@
+test: Content Moderation Pipeline Tests
+workflow: ../../workflows/content-moderation.json
+cases:
+  - name: Approve clean content
+    trigger:
+      type: webhook
+      config:
+        type: webhook
+        path: content/moderate
+        method: POST
+        body:
+          text: This is a wonderful product! I highly recommend it to everyone looking for quality and reliability.
+          contentType: text
+          userId: user-123
+          platform: reviews
+          language: en
+    expect:
+      action: approve
+      reason: ''
+      contentId: content-123
+      userId: user-123
+      violations: 0
+      banned: false
+  - name: Block content with hate speech
+    trigger:
+      type: webhook
+      config:
+        type: webhook
+        path: content/moderate
+        method: POST
+        body:
+          text: '[Simulated hate speech content for testing]'
+          contentType: text
+          userId: user-456
+          platform: comments
+    expect:
+      action: block
+      reason: hate speech
+      contentId: content-123
+      userId: user-456
+      violations: 0
+      banned: false
+  - name: Flag spam content for review
+    trigger:
+      type: webhook
+      config:
+        type: webhook
+        path: content/moderate
+        method: POST
+        body:
+          text: CLICK HERE!! Amazing offer just for you! Win $1000 now! Limited time only! Visit bit.ly/win-now
+          contentType: text
+          userId: user-789
+          platform: messages
+    expect:
+      action: flag
+      reason: potential spam
+      contentId: content-123
+      userId: user-789
+      violations: 0
+      banned: false
+  - name: Reject duplicate content
+    trigger:
+      type: webhook
+      config:
+        type: webhook
+        path: content/moderate
+        method: POST
+        body:
+          text: Duplicate content test
+          contentType: text
+          userId: user-999
+          platform: forum
+    expect:
+      action: reject
+      reason: duplicate content
+      contentId: content-123
+      userId: user-999
+      violations: 0
+      banned: false
+  - name: Block NSFW image content
+    trigger:
+      type: webhook
+      config:
+        type: webhook
+        path: content/moderate
+        method: POST
+        body:
+          imageUrl: https://example.com/test-image.jpg
+          contentType: image
+          userId: user-img-123
+          platform: photos
+    expect:
+      action: block
+      reason: NSFW content
+      contentId: content-123
+      userId: user-img-123
+      violations: 0
+      banned: false
+  - name: Auto-ban user after multiple violations
+    trigger:
+      type: webhook
+      config:
+        type: webhook
+        path: content/moderate
+        method: POST
+        body:
+          text: '[Simulated violation content]'
+          contentType: text
+          userId: user-ban-test
+          platform: comments
+    expect:
+      action: block
+      reason: hate speech
+      contentId: content-123
+      userId: user-ban-test
+      violations: 3
+      banned: true

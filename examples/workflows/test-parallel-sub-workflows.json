@@ -1,0 +1,93 @@
+{
+  "name": "Test Parallel Sub-Workflows",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "data-processing-workflow"
+        },
+        "mode": "once"
+      },
+      "name": "Process Data",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "validation-workflow"
+        },
+        "mode": "once"
+      },
+      "name": "Validate Data",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "notification-workflow"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 250]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Combine all sub-workflow results\nreturn [{\n  json: {\n    processing: items[0].json,\n    validation: items[1].json,\n    notificationQueued: true,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Final Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "Process Data", "type": "main", "index": 0 },
+          { "node": "Validate Data", "type": "main", "index": 0 },
+          { "node": "Send Notification", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Process Data": {
+      "main": [[{ "node": "Merge Results", "type": "main", "index": 0 }]]
+    },
+    "Validate Data": {
+      "main": [[{ "node": "Merge Results", "type": "main", "index": 1 }]]
+    },
+    "Merge Results": {
+      "main": [[{ "node": "Final Output", "type": "main", "index": 0 }]]
+    }
+  }
+}

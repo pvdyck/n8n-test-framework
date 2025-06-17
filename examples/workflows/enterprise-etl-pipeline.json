@@ -1,0 +1,264 @@
+{
+  "name": "Enterprise ETL Pipeline with Error Recovery",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "name": "Hourly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM orders WHERE created_at > NOW() - INTERVAL '1 hour' AND status = 'pending'"
+      },
+      "name": "Extract Orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM inventory WHERE last_updated > NOW() - INTERVAL '1 hour'"
+      },
+      "name": "Extract Inventory",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM customers WHERE id IN ({{ $json.customer_ids.join(',') }})"
+      },
+      "name": "Extract Customers",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Data validation and transformation\nconst errors = [];\nconst validRecords = [];\n\nfor (const item of items) {\n  try {\n    // Validate required fields\n    if (!item.json.order_id || !item.json.customer_id) {\n      errors.push({\n        record: item.json,\n        error: 'Missing required fields',\n        timestamp: new Date().toISOString()\n      });\n      continue;\n    }\n    \n    // Check inventory availability\n    const inventoryItem = item.json.inventory || {};\n    if (inventoryItem.quantity < item.json.order_quantity) {\n      errors.push({\n        record: item.json,\n        error: 'Insufficient inventory',\n        availableQty: inventoryItem.quantity,\n        requestedQty: item.json.order_quantity\n      });\n      continue;\n    }\n    \n    // Transform and enrich data\n    validRecords.push({\n      orderId: item.json.order_id,\n      customerId: item.json.customer_id,\n      customerName: item.json.customer_name,\n      productId: item.json.product_id,\n      quantity: item.json.order_quantity,\n      unitPrice: item.json.unit_price,\n      totalAmount: item.json.order_quantity * item.json.unit_price,\n      inventoryBefore: inventoryItem.quantity,\n      inventoryAfter: inventoryItem.quantity - item.json.order_quantity,\n      processedAt: new Date().toISOString(),\n      validationPassed: true\n    });\n  } catch (error) {\n    errors.push({\n      record: item.json,\n      error: error.message,\n      stack: error.stack\n    });\n  }\n}\n\n// Output both valid records and errors\nreturn [\n  validRecords.map(r => ({json: r})),\n  errors.map(e => ({json: e}))\n];"
+      },
+      "name": "Validate & Transform",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items().length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Has Valid Records?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items().length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Has Errors?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "batchSize": 100,
+        "options": {}
+      },
+      "name": "Batch Process",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "processed_orders",
+        "columns": "order_id,customer_id,product_id,quantity,total_amount,processed_at",
+        "options": {
+          "queryBatching": "transaction"
+        }
+      },
+      "name": "Load to DW",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "inventory",
+        "updateKey": "product_id",
+        "columns": "quantity,last_updated"
+      },
+      "name": "Update Inventory",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "index",
+        "index": "etl_errors",
+        "body": "={{ JSON.stringify($json) }}"
+      },
+      "name": "Log Errors to ES",
+      "type": "n8n-nodes-base.elasticsearch",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "channel": "#data-alerts",
+        "text": "ETL Pipeline Error Alert",
+        "attachments": [
+          {
+            "color": "#ff0000",
+            "fields": {
+              "item": [
+                {
+                  "short": true,
+                  "name": "Error Count",
+                  "value": "={{ $items().length }}"
+                },
+                {
+                  "short": true,
+                  "name": "Pipeline Run",
+                  "value": "={{ $workflow.id }}"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "name": "Alert on Errors",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate summary report\nconst validCount = $node['Has Valid Records?'].json.length || 0;\nconst errorCount = $node['Has Errors?'].json.length || 0;\nconst totalProcessed = validCount + errorCount;\n\nreturn [{\n  json: {\n    pipelineId: $workflow.id,\n    executionId: $execution.id,\n    runDate: new Date().toISOString(),\n    summary: {\n      totalRecordsProcessed: totalProcessed,\n      successfulRecords: validCount,\n      failedRecords: errorCount,\n      successRate: totalProcessed > 0 ? (validCount / totalProcessed * 100).toFixed(2) + '%' : '0%'\n    },\n    performance: {\n      startTime: $execution.startedAt,\n      endTime: new Date().toISOString(),\n      durationMs: Date.now() - new Date($execution.startedAt).getTime()\n    },\n    nextScheduledRun: new Date(Date.now() + 3600000).toISOString()\n  }\n}];"
+      },
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": "app123456",
+        "table": "ETL Pipeline Runs",
+        "options": {}
+      },
+      "name": "Log to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    }
+  ],
+  "connections": {
+    "Hourly Trigger": {
+      "main": [
+        [
+          { "node": "Extract Orders", "type": "main", "index": 0 },
+          { "node": "Extract Inventory", "type": "main", "index": 0 },
+          { "node": "Extract Customers", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Extract Orders": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 0 }]]
+    },
+    "Extract Inventory": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 1 }]]
+    },
+    "Extract Customers": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 2 }]]
+    },
+    "Merge Data": {
+      "main": [[{ "node": "Validate & Transform", "type": "main", "index": 0 }]]
+    },
+    "Validate & Transform": {
+      "main": [
+        [{ "node": "Has Valid Records?", "type": "main", "index": 0 }],
+        [{ "node": "Has Errors?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Valid Records?": {
+      "main": [
+        [{ "node": "Batch Process", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Has Errors?": {
+      "main": [
+        [
+          { "node": "Log Errors to ES", "type": "main", "index": 0 },
+          { "node": "Alert on Errors", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Batch Process": {
+      "main": [[{ "node": "Load to DW", "type": "main", "index": 0 }]]
+    },
+    "Load to DW": {
+      "main": [[{ "node": "Update Inventory", "type": "main", "index": 0 }]]
+    },
+    "Update Inventory": {
+      "main": [[{ "node": "Generate Report", "type": "main", "index": 0 }]]
+    },
+    "Log Errors to ES": {
+      "main": [[{ "node": "Generate Report", "type": "main", "index": 0 }]]
+    },
+    "Alert on Errors": {
+      "main": [[{ "node": "Generate Report", "type": "main", "index": 0 }]]
+    },
+    "Generate Report": {
+      "main": [[{ "node": "Log to Airtable", "type": "main", "index": 0 }]]
+    }
+  }
+}
